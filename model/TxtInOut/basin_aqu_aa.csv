@@ -1,0 +1,4 @@
+ a10_single_hru            SWAT+ Jun 13 2023       MODULAR Rev 2023.60.5.7                                
+  jday,   mon,   day,    yr,   unit , gis_id , name           ,            flo ,         dep_wt ,           stor,          rchrg,           seep,          revap,         no3_st,           minp,           orgn,           orgp,       no3_rchg,       no3_loss,        no3_lat,       no3_seep,        flo_cha,        flo_res,         flo_ls
+      ,      ,      ,      ,        ,        ,                ,              mm,              m ,             mm,             mm,             mm,             mm,        kg/ha_N,        kg/ha_P,        kg/ha_N,        kg/ha_P,        kg/ha_N,        kg/ha_N,        kg/ha_N,        kg/ha_N,             mm,             mm,             mm
+365,12,31,2025,       1,     1,a10_single_hru           ,.00,24.6,.265E+04,.00,.00,9.80,.209E-07,.00,.500,.00,.00,.178E-06,.00,.00,.00,.00,.00
