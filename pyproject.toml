@@ -14,4 +14,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/swat_kimberly"]
+packages = ["src/swat_kimberly", "src/swat_gym"]
+
+[project.optional-dependencies]
+dev = ["pytest", "salib"]
+rl = [
+    "cma>=4.4.4",
+    "gymnasium>=1.3.0",
+    "stable-baselines3>=2.9.0",
+    "torch>=2.13.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["src/swat_gym/tests"]
+markers = ["slow: runs the reference pySWATPlus path"]
