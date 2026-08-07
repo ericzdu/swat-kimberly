@@ -103,6 +103,11 @@ class YearAction:
     #: skipped. The annual fixed-interval schedule nests here via
     #: :func:`swat_gym.monthly.annual_to_monthly`.
     irr_month_depths: tuple[float, ...] | None = None
+    #: When set, overrides both of the above: explicit ``((day-of-year, mm), ...)`` events.
+    #: Generic in cadence — weekly, daily or irregular — so the action space's temporal
+    #: resolution is a parameter of the experiment rather than of the renderer. Events at or
+    #: after harvest are dropped, as for the fixed-interval path.
+    irr_day_depths: tuple[tuple[int, float], ...] | None = None
 
     def __post_init__(self) -> None:
         if self.crop not in CROPS:
@@ -177,7 +182,13 @@ def _year_ops(action: YearAction, *, plant: bool, terminate: bool, irr_name: str
 
     # Irrigation. Monthly depths take precedence over the fixed-interval triple so the
     # open-loop monthly arm and the annual default share one renderer.
-    if action.irr_month_depths is not None:
+    if action.irr_day_depths is not None:
+        for doy, depth in action.irr_day_depths:
+            doy = int(doy)
+            if depth <= 0 or doy >= end_doy:
+                continue
+            ops.append((doy, _op("irrm", *_md(doy), f"{irr_name}_d{doy:03d}")))
+    elif action.irr_month_depths is not None:
         for mon, depth in zip(GROWING_MONTHS, action.irr_month_depths):
             if depth <= 0:
                 continue
@@ -225,7 +236,16 @@ def build(actions: list[YearAction], *, spinup: list[tuple[int, str]] | None = N
         terminate = not (action.crop == "alfa" and nxt == "alfa")
 
         irr_name = f"gy{i:02d}"
-        if action.irr_month_depths is not None:
+        if action.irr_day_depths is not None:
+            for doy, depth in action.irr_day_depths:
+                if depth <= 0:
+                    continue
+                irr_lines.append(
+                    f"{f'{irr_name}_d{int(doy):03d}':<22}{float(depth):>10.5f}"
+                    f"{IRR_EFF:>14.5f}{0.0:>14.5f}"
+                    f"{0.0:>14.5f}{0.0:>14.5f}{0.0:>14.5f}{0.0:>14.5f}  \n"
+                )
+        elif action.irr_month_depths is not None:
             for mon, depth in zip(GROWING_MONTHS, action.irr_month_depths):
                 if depth <= 0:
                     continue

@@ -8,30 +8,44 @@ isolated ``sim_dir`` so the source stays pristine.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pandas as pd
 from pySWATPlus import TxtinoutReader, utils as _pysp_utils
 
-# --- macOS Mach-O shim -------------------------------------------------------
-# pySWATPlus 1.3.0 only recognizes Linux ELF / Windows PE binaries when locating
-# the SWAT+ engine; the macOS engine is Mach-O, so TxtinoutReader can't find it.
-# Teach its detector the Mach-O magic numbers (thin + universal/fat).
+# --- engine discovery shim ---------------------------------------------------
+# pySWATPlus 1.3.0 only recognizes Linux ELF / Windows PE when locating the SWAT+
+# engine; teach it Mach-O, and ignore backups / wrong-OS siblings so Mac+Linux
+# rev-62 binaries can coexist in TxtInOut (FastRunner already does this).
 _MACHO_MAGIC = {
     b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",  # 64/32-bit little-endian
     b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",  # 64/32-bit big-endian
     b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",  # universal (fat)
 }
+_ELF_MAGIC = b"\x7fELF"
 _orig_is_exe = _pysp_utils._is_real_executable
 
 
+def _is_backup(path: Path) -> bool:
+    n = path.name.lower()
+    return n.endswith(".bak") or ".bak." in n or n.endswith(".old")
+
+
 def _is_real_executable(file_path: Path) -> bool:
-    if file_path.is_file() and os.access(file_path, os.X_OK):
-        try:
-            if open(file_path, "rb").read(4) in _MACHO_MAGIC:
-                return True
-        except OSError:
-            pass
+    if not file_path.is_file() or not os.access(file_path, os.X_OK) or _is_backup(file_path):
+        return False
+    try:
+        head = open(file_path, "rb").read(4)
+    except OSError:
+        return False
+    # Keep only the native family so a co-vendored Linux ELF does not count on macOS.
+    import platform
+    system = platform.system()
+    if system == "Darwin":
+        return head in _MACHO_MAGIC
+    if system == "Linux":
+        return head.startswith(_ELF_MAGIC)
     return _orig_is_exe(file_path)
 
 
@@ -53,6 +67,8 @@ class KimberlySwat:
         if sim_dir is None:
             sim_dir = PROJECT_ROOT / "runs" / "latest"
         sim_dir = Path(sim_dir)
+        if sim_dir.exists():
+            shutil.rmtree(sim_dir)  # pySWATPlus requires an empty run dir
         sim_dir.mkdir(parents=True, exist_ok=True)
         return self.reader.run_swat(sim_dir=sim_dir, **kwargs)
 

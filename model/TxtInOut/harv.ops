@@ -16,3 +16,6 @@ stover_med                 residue       0.60000       1.00000    2000.00000
 vegetables                 biomass       0.50000       1.00000    2000.00000  
 cotton_picker                grain       0.05000       0.95000       0.00000  
 cotton_strip                 grain       0.05000       0.95000       0.00000  
+gn_corn  biomass  0.99813  1.00000  0.00000  fitted_2026-07-31_from_REF_0.98  
+gn_barl  biomass  0.64756  1.00000  0.00000  fitted_2026-07-31_from_REF_0.54  
+gn_alfa  biomass  0.86667  1.00000  0.00000  fitted_2026-07-31_from_REF_0.95  

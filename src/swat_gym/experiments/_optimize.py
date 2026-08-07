@@ -13,11 +13,14 @@ from collections.abc import Callable, Sequence
 
 import numpy as np
 
+from ._progress import progress
+
 
 def minimise(fn: Callable[[np.ndarray], float], x0: Sequence[float], *,
              evals: int, seed: int = 0, sigma0: float = 0.25,
              state: bytes | None = None,
              on_generation: Callable[[bytes, int, np.ndarray, float], None] | None = None,
+             desc: str = "CMA-ES",
              ) -> tuple[np.ndarray, int, list[dict]]:
     """Minimise ``fn`` over ``[0, 1]^n``.
 
@@ -42,18 +45,27 @@ def minimise(fn: Callable[[np.ndarray], float], x0: Sequence[float], *,
     best_x = np.asarray(es.best.x if es.best.x is not None else x0, dtype=float)
     best_f = float(es.best.f) if es.best.f is not None else float("inf")
     history: list[dict] = []
+    done0 = int(es.countevals)
 
-    while not es.stop():
-        xs = es.ask()
-        fs = []
-        for x in xs:
-            f = float(fn(np.asarray(x)))
-            fs.append(f)
-            if f < best_f:
-                best_f, best_x = f, np.asarray(x).copy()
-        es.tell(xs, fs)
-        n = int(es.countevals)
-        history.append({"evals": n, "best_f": float(best_f)})
-        if on_generation is not None:
-            on_generation(pickle.dumps(es), n, best_x, best_f)
+    with progress(evals, initial=done0, desc=desc, unit="eval") as bar:
+        while not es.stop():
+            xs = es.ask()
+            fs = []
+            for x in xs:
+                f = float(fn(np.asarray(x)))
+                fs.append(f)
+                if f < best_f:
+                    best_f, best_x = f, np.asarray(x).copy()
+                bar.update(1)
+                if np.isfinite(best_f) and abs(best_f) < 1e8:
+                    # Objectives here are typically −$/ha; show the human-facing profit.
+                    bar.set_postfix_str(f"best={-best_f:.0f} $/ha", refresh=False)
+            es.tell(xs, fs)
+            n = int(es.countevals)
+            history.append({"evals": n, "best_f": float(best_f)})
+            if on_generation is not None:
+                on_generation(pickle.dumps(es), n, best_x, best_f)
+            if bar.n != n:
+                bar.n = n
+                bar.refresh()
     return best_x, int(es.countevals), history

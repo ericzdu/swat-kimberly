@@ -1,3 +1,1 @@
- a10_single_hru            SWAT+ Jun 13 2023       MODULAR Rev 2023.60.5.7                                
-            e     s     p  peak_r   k_fac      slope          length   ls_factor    p_factor    c_factor       rsd_m  rsd_pctcov    rsd_cfac    can_lai3    can_hgt     can_cfac 
-                                m                m/m               m                                           kg/ha     percent                                   m             
+ a10_single_hru            SWAT+ 2026-06-18        MODULAR Rev 2026.62.0.0                                

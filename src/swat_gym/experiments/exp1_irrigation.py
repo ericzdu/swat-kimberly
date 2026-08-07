@@ -17,26 +17,35 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 
+from ..env import DEFAULT_PLAN
 from ..fastrunner import FastRunner
 from ..monthly import (default_monthly_i_free, evaluate_monthly_i)
 from ..monthly_env import EPISODE_STEPS, MonthlySwatEnv
 from ..rewarders import average
 from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage
-from ._focused import (ROOT, _load_stage, _row, _save_stage, _stage, _water_breakeven,
-                       mean, paired, score_measured)
+from ._focused import (ROOT, _cfg_key, _load_stage, _row, _save_stage, _stage,
+                       _water_breakeven, mean, paired, score_measured)
 from ._optimize import minimise
 
 OUT = ROOT / "runs" / "exp1_irrigation.json"
 
 
-def score_monthly(x, windows, prices, no3_price):
+def score_monthly(x, windows, prices, no3_price, max_n):
+    """Open-loop score. ``max_n`` is **required**: it must match the policy path's cap.
+
+    A silent ``max_n=MAX_N_LOADING`` default here once scored every open-loop row under a
+    400 kg N/ha cap while :class:`MonthlySwatEnv` ran uncapped, which inverted the sign of
+    ``policy - fixed``. Never give this a default again.
+    """
     with FastRunner() as runner:
         return [_row(evaluate_monthly_i(x, runner, prices=prices, start_year=sy,
-                                        no3_price=no3_price), sy) for sy in windows]
+                                        no3_price=no3_price, max_n=max_n), sy)
+                for sy in windows]
 
 
 def score_policy_monthly(model, windows, prices, no3_price, max_n):
@@ -54,10 +63,10 @@ def score_policy_monthly(model, windows, prices, no3_price, max_n):
     return rows, plans
 
 
-def score_month_plan(month_mm, windows, prices, no3_price):
+def score_month_plan(month_mm, windows, prices, no3_price, max_n):
     from ..monthly import encode_monthly_depths
     x = encode_monthly_depths(month_mm)
-    return score_monthly(x, windows, prices, no3_price)
+    return score_monthly(x, windows, prices, no3_price, max_n)
 
 
 def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
@@ -65,10 +74,14 @@ def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
     from stable_baselines3.common.callbacks import CheckpointCallback
     from stable_baselines3.common.vec_env import SubprocVecEnv
 
+    from ._progress import ppo_callbacks, ppo_progress_bar
+
     scfg = {**cfg, "ppo_seed": seed}
     tag = f"ppo_s{seed}"
     ppo_path = args.out.with_name(f"{args.out.stem}_{tag}.zip")
-    ckpt_dir = args.out.parent / f"{args.out.stem}_{tag}_ckpt"
+    # Config-keyed, as in _focused.py: the λ sweep trains one policy per nitrate price, and an
+    # unkeyed directory would let a λ=0 checkpoint resume into a λ=40 run.
+    ckpt_dir = args.out.parent / f"{args.out.stem}_{tag}_ckpt_{_cfg_key(scfg)}"
 
     def make(i):
         def _f():
@@ -80,15 +93,27 @@ def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
     venv = SubprocVecEnv([make(i) for i in range(args.n_envs)])
     try:
         if ppo_path.is_file() and _load_stage(args.out, tag, scfg) is not None:
-            return PPO.load(str(ppo_path), env=venv)
-        print(f"  seed {seed}: training {args.budget} timesteps "
-              f"(episode={EPISODE_STEPS})", flush=True)
-        model = PPO("MlpPolicy", venv, seed=seed, verbose=1,
-                    n_steps=EPISODE_STEPS * 4, batch_size=EPISODE_STEPS * 2,
-                    gamma=1.0, policy_kwargs={"log_std_init": -1.0})
-        model.learn(total_timesteps=args.budget,
-                    callback=CheckpointCallback(save_freq=max(1, args.budget // 20),
-                                                save_path=str(ckpt_dir), name_prefix="ppo"))
+            model = PPO.load(str(ppo_path), env=venv)
+            print(f"  seed {seed}: already trained to {model.num_timesteps} steps", flush=True)
+            return model
+        resume = sorted(ckpt_dir.glob("*.zip"), key=lambda q: q.stat().st_mtime)
+        if resume:
+            model = PPO.load(str(resume[-1]), env=venv)
+            print(f"  seed {seed}: resuming from {resume[-1].name} at "
+                  f"{model.num_timesteps} steps", flush=True)
+        else:
+            print(f"  seed {seed}: training {args.budget} timesteps "
+                  f"(episode={EPISODE_STEPS})", flush=True)
+            model = PPO("MlpPolicy", venv, seed=seed, verbose=0,
+                        n_steps=EPISODE_STEPS * 4, batch_size=EPISODE_STEPS * 2,
+                        gamma=1.0, policy_kwargs={"log_std_init": -1.0})
+        remaining = args.budget - int(model.num_timesteps)
+        if remaining > 0:
+            ckpt = CheckpointCallback(save_freq=max(1, args.budget // 20),
+                                      save_path=str(ckpt_dir), name_prefix="ppo")
+            model.learn(total_timesteps=remaining, reset_num_timesteps=False,
+                        callback=ppo_callbacks(ckpt),
+                        progress_bar=ppo_progress_bar())
         model.save(str(ppo_path.with_suffix("")))
         _save_stage(args.out, tag, scfg, {"num_timesteps": int(model.num_timesteps)})
         return model
@@ -103,72 +128,133 @@ def main(argv=None) -> dict:
     ap.add_argument("--n-envs", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--ppo-seeds", type=int, default=3)
-    ap.add_argument("--no3-price", type=float, default=0.0)
+    ap.add_argument("--no3-price", type=float, default=0.0,
+                    help="$/kg N on leached nitrate. A swept axis, not a shadow price: "
+                         "report the whole frontier with the 0 arm alongside")
+    ap.add_argument("--water-price", type=float, default=None,
+                    help="$/mm/ha override for the placeholder DEFAULT_WATER")
     ap.add_argument("--skip-ppo", action="store_true",
                     help="open-loop CMA only (use after a failed ceiling gate)")
     ap.add_argument("--out", type=Path, default=OUT)
     args = ap.parse_args(argv)
 
     prices = average()
+    if args.water_price is not None:
+        # Label carries the override so an artefact identifies its own price vector.
+        prices = replace(prices, water=args.water_price,
+                         label=f"{prices.label}@w={args.water_price:g}")
     max_n = None
     train, test = list(TRAIN_YEARS), list(TEST_YEARS)
     evals = max(1, args.budget // len(train))
     t0 = time.time()
+    # Everything the training objective depends on must key the artefacts, or a stale policy
+    # resumes into a different question. ``no3_price``/``max_n`` because they are the reward;
+    # ``default_plan`` because every arm inherits its pinned levers (crop, manure, mineral N)
+    # from it — correcting its manure to the measured per-year masses changed the objective for
+    # every arm, and without this digest the previous policies would have been silently reused.
     cfg = {"arm": "I_monthly", "budget": args.budget, "seed": args.seed,
-           "prices": prices.label, "train": train, "test": test}
+           "prices": prices.label, "train": train, "test": test,
+           "no3_price": args.no3_price, "max_n": max_n,
+           "default_plan": _cfg_key({"p": DEFAULT_PLAN.round(6).tolist()})}
 
     print(f"Exp1 irrigation monthly  budget={args.budget}  "
           f"CMA evals={evals} × {len(train)} windows", flush=True)
 
-    measured_test = score_measured(test, prices, args.no3_price)
-    default_x = default_monthly_i_free()
-    default_test = score_monthly(default_x, test, prices, args.no3_price)
-    print(f"measured {mean(measured_test):.0f}  monthly-default {mean(default_test):.0f} "
-          f"({mean(default_test) - mean(measured_test):+.0f})", flush=True)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    partial = args.out.with_name(f"{args.out.stem}_openloop.json")
+    resumed_openloop = False
+    if partial.is_file():
+        try:
+            prev = json.loads(partial.read_text())
+        except (OSError, json.JSONDecodeError):
+            prev = None
+        # The guard must cover everything the CMA-ES objective depends on. It once checked only
+        # arm and budget, so a schedule optimised under the 400 kg N/ha cap would silently
+        # resume into an uncapped run and be reported as that run's optimum.
+        if (isinstance(prev, dict) and prev.get("arm") == "I_monthly"
+                and prev.get("budget") == args.budget and prev.get("fixed_x")
+                and prev.get("no3_price", 0.0) == args.no3_price
+                and prev.get("max_n", "missing") == max_n):
+            print(f"resuming open-loop from {partial}", flush=True)
+            summary = prev
+            x = np.asarray(prev["fixed_x"], dtype=float)
+            measured_test = score_measured(test, prices, args.no3_price)
+            default_x = default_monthly_i_free()
+            default_test = score_monthly(default_x, test, prices, args.no3_price, max_n)
+            fixed_test = score_monthly(x, test, prices, args.no3_price, max_n)
+            fixed_train = score_monthly(x, train, prices, args.no3_price, max_n)
+            resumed_openloop = True
 
-    # Nesting gate: monthly default irrigation vs measured total within 1%.
-    with FastRunner() as runner:
-        d0 = evaluate_monthly_i(default_x, runner, prices=prices, start_year=2013)
-    measured_mm = 3938.8
-    nest_err = abs(d0["irrigation_mm"] - measured_mm) / measured_mm
-    print(f"nesting: monthly default {d0['irrigation_mm']:.1f} mm vs measured "
-          f"{measured_mm} ({100 * nest_err:.2f}% err)", flush=True)
+    if not resumed_openloop:
+        measured_test = score_measured(test, prices, args.no3_price)
+        default_x = default_monthly_i_free()
+        default_test = score_monthly(default_x, test, prices, args.no3_price, max_n)
+        print(f"measured {mean(measured_test):.0f}  monthly-default {mean(default_test):.0f} "
+              f"({mean(default_test) - mean(measured_test):+.0f})", flush=True)
 
-    x0 = default_x
-    with FastRunner() as runner:
-        def obj(free):
-            total = 0.0
-            for sy in train:
-                try:
-                    total += evaluate_monthly_i(free, runner, prices=prices,
-                                                start_year=sy)["profit"]
-                except Exception:
-                    return 1e9
-            return -total / len(train)
-        x, n_evals, history = minimise(obj, x0, evals=evals, seed=args.seed)
+        # Nesting gate: monthly default irrigation vs measured total within 1%.
+        with FastRunner() as runner:
+            d0 = evaluate_monthly_i(default_x, runner, prices=prices, start_year=2013,
+                                    max_n=max_n)
+        measured_mm = 3938.8
+        nest_err = abs(d0["irrigation_mm"] - measured_mm) / measured_mm
+        print(f"nesting: monthly default {d0['irrigation_mm']:.1f} mm vs measured "
+              f"{measured_mm} ({100 * nest_err:.2f}% err)", flush=True)
 
-    fixed_test = score_monthly(x, test, prices, args.no3_price)
-    fixed_train = score_monthly(x, train, prices, args.no3_price)
-    print(f"CMA fixed test {mean(fixed_test):.0f}  "
-          f"(+{mean(fixed_test) - mean(default_test):.0f} vs default)", flush=True)
+        x0 = default_x
+        with FastRunner() as runner:
+            def obj(free):
+                total = 0.0
+                for sy in train:
+                    try:
+                        total += evaluate_monthly_i(free, runner, prices=prices,
+                                                    start_year=sy,
+                                                    max_n=max_n)["profit"]
+                    except Exception:
+                        return 1e9
+                return -total / len(train)
+            x, n_evals, history = minimise(obj, x0, evals=evals, seed=args.seed,
+                                           desc="CMA open-loop")
 
-    summary = {
-        "arm": "I_monthly", "budget": args.budget,
-        "nesting_err": nest_err, "default_irrigation_mm": d0["irrigation_mm"],
-        "cma_evals": n_evals, "cma_history": history,
-        "mean_profit": {
-            "measured_test": mean(measured_test),
-            "default_test": mean(default_test),
-            "fixed_train": mean(fixed_train), "fixed_test": mean(fixed_test),
-        },
-        "paired_test": {
-            "default_vs_measured": paired(default_test, measured_test),
-            "fixed_vs_default": paired(fixed_test, default_test),
-        },
-        "fixed_x": list(map(float, x)),
-        "train_years": train, "test_years": test,
-        "seconds": round(time.time() - t0, 1),
-    }
+        fixed_test = score_monthly(x, test, prices, args.no3_price, max_n)
+        fixed_train = score_monthly(x, train, prices, args.no3_price, max_n)
+        print(f"CMA fixed test {mean(fixed_test):.0f}  "
+              f"(+{mean(fixed_test) - mean(default_test):.0f} vs default)", flush=True)
+
+        summary = {
+            "arm": "I_monthly", "budget": args.budget,
+            # Part of the CMA-ES objective; the resume guard above checks both.
+            "no3_price": args.no3_price, "max_n": max_n,
+            "nesting_err": nest_err, "default_irrigation_mm": d0["irrigation_mm"],
+            "cma_evals": n_evals, "cma_history": history,
+            "mean_profit": {
+                "measured_test": mean(measured_test),
+                "default_test": mean(default_test),
+                "fixed_train": mean(fixed_train), "fixed_test": mean(fixed_test),
+            },
+            "paired_test": {
+                "default_vs_measured": paired(default_test, measured_test),
+                "fixed_vs_default": paired(fixed_test, default_test),
+            },
+            "fixed_x": list(map(float, x)),
+            "train_years": train, "test_years": test,
+            "seconds": round(time.time() - t0, 1),
+        }
+        # Persist open-loop before PPO so a progress-bar / env crash does not discard CMA.
+        partial.write_text(json.dumps(summary, indent=2, default=str))
+        print(f"-> {partial}", flush=True)
+    else:
+        print(f"measured {mean(measured_test):.0f}  monthly-default {mean(default_test):.0f} "
+              f"({mean(default_test) - mean(measured_test):+.0f})", flush=True)
+        print(f"CMA fixed test {mean(fixed_test):.0f}  "
+              f"(+{mean(fixed_test) - mean(default_test):.0f} vs default) [re-scored]",
+              flush=True)
+        summary["mean_profit"]["measured_test"] = mean(measured_test)
+        summary["mean_profit"]["default_test"] = mean(default_test)
+        summary["mean_profit"]["fixed_train"] = mean(fixed_train)
+        summary["mean_profit"]["fixed_test"] = mean(fixed_test)
+        summary["paired_test"]["default_vs_measured"] = paired(default_test, measured_test)
+        summary["paired_test"]["fixed_vs_default"] = paired(fixed_test, default_test)
 
     if not args.skip_ppo:
         seeds = [args.seed + 100 * i for i in range(max(1, args.ppo_seeds))]
@@ -178,10 +264,11 @@ def main(argv=None) -> dict:
             p_test, p_plans = score_policy_monthly(model, test, prices, args.no3_price, max_n)
             p_train, p_plans_tr = score_policy_monthly(model, train, prices,
                                                       args.no3_price, max_n)
-            fz_tr = {sy: score_month_plan(mm, train, prices, args.no3_price)
+            fz_tr = {sy: score_month_plan(mm, train, prices, args.no3_price, max_n)
                      for sy, mm in p_plans_tr.items()}
             bf = max(fz_tr, key=lambda sy: mean(fz_tr[sy]))
-            frozen_test = score_month_plan(p_plans_tr[bf], test, prices, args.no3_price)
+            frozen_test = score_month_plan(p_plans_tr[bf], test, prices, args.no3_price,
+                                           max_n)
             per_seed[s] = {
                 "policy_test": mean(p_test), "frozen_test": mean(frozen_test),
                 "adv": mean(p_test) - mean(fixed_test),

@@ -13,7 +13,7 @@ Lives in `src/swat_gym/`. Sibling to `../rufas-gym` and `../aquaswat-gym`.
 | 1. Calibration | response trustworthy within named bounds | closed as far as engine allows |
 | 2. Protocol fixes | zero year-leakage; freeze on train; CMA history | done (`windows.py`, `_focused.py`) |
 | 3. Monthly open-loop | Apr–Sep depths; nest annual default | `monthly.py` |
-| 4. Ceiling gate | perfect foresight vs shared schedule | `exp1_ceiling` |
+| 4. Foresight gate | perfect foresight vs shared schedule (an *estimate*, not a ceiling) | `exp1_ceiling` |
 | 5. Feedback controller | CMA closed-loop row | `exp1_controller` |
 | 6. Monthly gym + Exp 1–4 | adaptivity under monthly MDP | `monthly_env.py` + `exp1`…`exp4` |
 
@@ -24,7 +24,9 @@ pytest → exp1_ceiling → exp1_controller → exp1_irrigation → exp2_nitroge
 ```
 
 Do **not** start Exp 4 until Exp 1’s frozen-plan sign is stable across seeds.
-Do **not** start cluster PPO if `exp1_ceiling` reports `gate_pass: false`.
+Do **not** start cluster PPO if `exp1_ceiling` reports `gate_pass: false`. The key is
+`foresight_test`, not `ceiling_test`: an under-converged oracle biases it *down*, so a policy
+can legitimately exceed it. Measured 2026-08-06: **+836 ± 68 $/ha**.
 
 ## Five-row protocol
 
@@ -44,6 +46,8 @@ Plus Exp 1 extras: **ceiling** (perfect foresight) and **controller** (CMA feedb
 
 ```bash
 uv run python -m swat_gym.experiments.exp1_ceiling --budget 5000
+# or the whole Exp 1 pipeline, detached, with the objective-parity preflight:
+#   perl -e 'use POSIX; setsid(); exec @ARGV' -- bash scripts/rerun_exp1.sh
 uv run python -m swat_gym.experiments.exp1_controller --budget 5000
 uv run python -m swat_gym.experiments.exp1_irrigation --budget 300000 --ppo-seeds 3
 # open-loop only after failed gate:
@@ -106,11 +110,28 @@ Suggested map after Exp 1 smoke is green:
 - [ ] `exp1_ceiling` written; if `gate_pass` false, skip PPO
 - [ ] Water price sourced or breakeven reported (re-optimize under sweep when sourced)
 
-## Superseded (do not use for new claims)
+## Deleted 2026-08-07 (recover from git history if ever needed)
 
-- `exp1_ablation.py` — old six-arm combination ablation
-- `exp2_rl.py` — annual-cadence PPO with budget asymmetry
-- Old numbering: `exp1_nitrogen` / `exp2_irrigation` are thin redirects to Exp 2 / Exp 1
+The tree now holds only modules that are live for the paper. Everything below was removed in one
+pass; git history is the archive.
+
+**Leaky split — do not restore without re-pointing it.** `exp2_rl.py` (annual-cadence PPO with
+budget asymmetry), `exp2b_controls.py` (its frozen-plan controls), `scripts/run_overnight.sh`
+(their driver). These carried a private `TRAIN_YEARS`/`TEST_YEARS` pair — 1995–2011 / 2012–2018 —
+predating `swat_gym.windows` and overlapping by seven of eight calendar years. They never imported
+`windows`, so `assert_no_leakage()` never ran and they produced leaky numbers without failing.
+
+**Superseded by the monthly pivot.** `exp1_ablation.py` (six-arm combination ablation) and the
+old-numbering redirects `exp1_nitrogen.py` / `exp2_irrigation.py` (thin shims to Exp 2 / Exp 1 —
+pre-pivot command lines no longer resolve).
+
+**Retired sweeps whose *results* remain load-bearing.** `exp1b_price_ratio.py` and
+`exp1c_cadence.py`, plus `tests/test_cadence.py` which imported the latter. The code is gone but
+the evidence is not: `rewarders.py:247` still cites `runs/exp1b_price_ratio.json` for the price
+curve, and `env.py:45` still cites `runs/exp1c_cadence_e500.json` for the constant-dimensionality
+result (k ≥ 3 lost 310–835 $/ha). **Those JSONs are retained in `runs/` and must not be deleted** —
+they are the only surviving record, since `runs/` is gitignored. Regenerating either curve means
+restoring the module from history first.
 
 ## Engine cost
 

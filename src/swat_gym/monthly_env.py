@@ -22,13 +22,13 @@ from .constrainers import MANURE_N_FRAC, MAX_N_LOADING, mineral_n, manure_n, rep
 from .env import (DEFAULT_PLAN, N_YEARS, SPINUP, WEATHER_YEARS, arm_dims, decode_year,
                   time_sim)
 from .fastrunner import EDITABLE, FastRunner
-from .monthly import MONTH_DEPTH_MAX, N_GROWING, plan_from_monthly_i
+from .monthly import MONTH_DEPTH_MAX, N_GROWING, plan_from_monthly_i, year_events
 from .rewarders import Prices, nass, profit
 from .schedule import CROPS, GROWING_MONTHS, YearAction, build
 
-#: Observation: [step_frac, crop one-hot (3), stand_frac, sw, strsn, strsw,
+#: Observation: [step_frac, crop one-hot (len(CROPS)=3), stand_frac, sw, strsn, strsw,
 #:               precip_30, pet_30, remaining_n_frac, month_of_season, year_frac]
-OBS_DIM_MONTHLY = 14
+OBS_DIM_MONTHLY = 1 + len(CROPS) + 9  # 13 — must match :meth:`_obs`
 
 EPISODE_STEPS = N_YEARS * N_GROWING  # 42
 
@@ -131,7 +131,9 @@ class MonthlySwatEnv:
                     base,
                     irr_depth=0.0,
                     irr_interval=0,
-                    irr_month_depths=tuple(float(v) for v in self.month_mm[y]),
+                    irr_month_depths=None,
+                    # Same renderer as the open-loop path — objective parity depends on it.
+                    irr_day_depths=year_events(self.month_mm[y], base.crop),
                 )
             else:
                 splits = tuple(
@@ -147,7 +149,8 @@ class MonthlySwatEnv:
                     fert_n_kg=0.0,
                     irr_depth=0.0,
                     irr_interval=0,
-                    irr_month_depths=tuple(float(v) for v in self.month_mm[y]),
+                    irr_month_depths=None,
+                    irr_day_depths=year_events(self.month_mm[y], self.crops[y]),
                 )
             plan.append(act)
         # Rotation constraints only — do NOT rescale past N applications.
@@ -202,7 +205,7 @@ class MonthlySwatEnv:
                 break
         rem = self.last.get("remaining_n", float(self.max_n or MAX_N_LOADING))
         cap = float(self.max_n or MAX_N_LOADING) or 1.0
-        return np.array([
+        out = np.array([
             self.t / EPISODE_STEPS,
             *onehot,
             stand / N_YEARS,
@@ -215,6 +218,12 @@ class MonthlySwatEnv:
             m / N_GROWING,
             y / N_YEARS,
         ], dtype=np.float32)
+        if out.shape != (OBS_DIM_MONTHLY,):
+            raise RuntimeError(
+                f"monthly obs length {out.shape[0]} != OBS_DIM_MONTHLY={OBS_DIM_MONTHLY}"
+            )
+        return out
+
 
     def close(self) -> None:
         if self._own:

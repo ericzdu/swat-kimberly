@@ -1,26 +1,20 @@
 """Locating and invoking the SWAT+ engine — the only platform-dependent layer.
 
-Everything else in ``swat_gym`` reads and writes SWAT+ text files and is OS-agnostic.
-When this project moves to Linux/WSL, this module is the file that changes: drop a Linux
-build into ``model/TxtInOut`` and :func:`find_engine` picks it up by ELF magic instead of
-Mach-O. Nothing above needs to know.
-
-The vendored macOS engine is Mach-O **x86_64**, so on Apple Silicon it runs under Rosetta 2 —
-timings here are a conservative floor, not a ceiling.
+Drop a platform-native build into ``model/TxtInOut``; :func:`find_engine` picks it by magic
+and ignores backups / wrong-OS siblings. Vendored engines for this project are **rev 62.0.0**.
 """
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 from pathlib import Path
 
-# Executable magic numbers by platform family. pySWATPlus only knows ELF/PE, which is why
-# runner.py needs its Mach-O shim; we do our own detection and skip the monkeypatch.
 _MAGIC = {
     "macho": (
-        b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",  # 64/32-bit little-endian
-        b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",  # 64/32-bit big-endian
-        b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",  # universal (fat)
+        b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",
+        b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",
     ),
     "elf": (b"\x7fELF",),
     "pe": (b"MZ",),
@@ -32,44 +26,70 @@ class EngineError(RuntimeError):
     """The SWAT+ engine could not be found, or exited without producing output."""
 
 
-def _is_executable_binary(path: Path) -> bool:
-    """True if ``path`` is a native executable for any supported platform."""
-    if not path.is_file():
-        return False
-    # Windows has no execute bit; rely on magic + suffix there.
-    if os.name != "nt" and not os.access(path, os.X_OK):
-        return False
+def _family(path: Path) -> str | None:
     try:
         head = path.open("rb").read(4)
     except OSError:
+        return None
+    for name, magics in _MAGIC.items():
+        if head.startswith(magics):
+            return name
+    return None
+
+
+def _is_backup(path: Path) -> bool:
+    n = path.name.lower()
+    return n.endswith(".bak") or ".bak." in n or n.endswith(".old")
+
+
+def _wanted_family() -> str:
+    system = platform.system()
+    if system == "Linux":
+        return "elf"
+    if system == "Darwin":
+        return "macho"
+    if system == "Windows":
+        return "pe"
+    return "elf"
+
+
+def _is_executable_binary(path: Path) -> bool:
+    if not path.is_file() or _is_backup(path):
         return False
-    return head.startswith(_ALL_MAGIC)
+    if os.name != "nt" and not os.access(path, os.X_OK):
+        return False
+    return _family(path) is not None
 
 
 def find_engine(txtinout: Path) -> Path:
-    """Return the SWAT+ executable inside ``txtinout``.
+    """Return the platform-native SWAT+ executable inside ``txtinout``.
 
-    Raises :class:`EngineError` if there is not exactly one candidate, so that a stale or
-    duplicated binary fails loudly rather than being picked arbitrarily.
+    Backups (``*.bak``) and wrong-OS binaries (e.g. Linux ELF on macOS) are ignored so both
+    the Mac and Linux rev-62 builds can sit in the same directory.
     """
-    candidates = sorted(p for p in txtinout.iterdir() if _is_executable_binary(p))
+    wanted = _wanted_family()
+    candidates = sorted(
+        p for p in txtinout.iterdir()
+        if _is_executable_binary(p) and _family(p) == wanted
+    )
     if not candidates:
         raise EngineError(
-            f"No SWAT+ executable found in {txtinout}. On Linux/WSL, place an ELF build of "
-            f"the engine there; on macOS a Mach-O build."
+            f"No native SWAT+ executable ({wanted}) found in {txtinout}. "
+            f"Place a rev 62.0.0 build for this OS there "
+            f"(Mac: Mach-O, Linux: ELF). Backups named *.bak are ignored."
         )
     if len(candidates) > 1:
+        # Prefer a name that advertises rev 62.
+        preferred = [p for p in candidates if "62" in p.name]
+        if len(preferred) == 1:
+            return preferred[0]
         names = ", ".join(p.name for p in candidates)
-        raise EngineError(f"Multiple executables in {txtinout}: {names}. Keep exactly one.")
+        raise EngineError(f"Multiple native executables in {txtinout}: {names}. Keep one.")
     return candidates[0]
 
 
 def run_engine(exe: Path, run_dir: Path, timeout: float = 600.0) -> str:
-    """Run ``exe`` with ``run_dir`` as the working directory; return its stdout.
-
-    SWAT+ resolves every path relative to the working directory (it reads ``file.cio`` from
-    there), so the engine must be invoked with ``cwd`` set — not given an absolute model path.
-    """
+    """Run ``exe`` with ``run_dir`` as the working directory; return its stdout."""
     try:
         proc = subprocess.run(
             [str(exe)],
@@ -78,12 +98,12 @@ def run_engine(exe: Path, run_dir: Path, timeout: float = 600.0) -> str:
             text=True,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise EngineError(f"SWAT+ timed out after {timeout}s in {run_dir}") from exc
-
+    except subprocess.TimeoutExpired as e:
+        raise EngineError(f"SWAT+ timed out after {timeout}s in {run_dir}") from e
     if proc.returncode != 0:
-        tail = (proc.stdout or "")[-2000:]
         raise EngineError(
-            f"SWAT+ exited {proc.returncode} in {run_dir}\n--- stdout tail ---\n{tail}"
+            f"SWAT+ exited {proc.returncode} in {run_dir}\n"
+            f"--- stdout tail ---\n{proc.stdout[-2000:]}\n"
+            f"--- stderr tail ---\n{proc.stderr[-2000:]}"
         )
     return proc.stdout

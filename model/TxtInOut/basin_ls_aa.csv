@@ -1,4 +1,1 @@
- a10_single_hru            SWAT+ Jun 13 2023       MODULAR Rev 2023.60.5.7                                
-  jday,   mon,   day,    yr,   unit , gis_id , name           ,      sedyld,     sedorgn,     sedorgp,     surqno3,     lat3no3,    surqsolp,        usle,     sedminp,     tileno3,     lchlabp,    tilelabp,      satexn
-      ,      ,      ,      ,        ,        ,                ,         tha,        kgha,        kgha,        kgha,        kgha,        kgha,        tons,        kgha,        kgha,        kgha,        kgha,        kgha
-365,12,31,2025,       1,       1,a10_single_hru           ,.103E-01,.635E-01,.615E-02,.806,.755E-04,.486E-01,.00,.117E-01,.00,.00,.00,.00
+ a10_single_hru            SWAT+ 2026-06-18        MODULAR Rev 2026.62.0.0                                

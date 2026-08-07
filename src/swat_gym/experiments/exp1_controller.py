@@ -21,6 +21,8 @@ from pathlib import Path
 
 import numpy as np
 
+from dataclasses import replace
+
 from ..env import N_YEARS, SPINUP, time_sim
 from ..fastrunner import FastRunner
 from ..monthly import (MONTH_DEPTH_MAX, N_GROWING, plan_from_monthly_i)
@@ -83,7 +85,7 @@ def _month_state(runner: FastRunner, year_idx: int, month: int) -> tuple[float, 
 
 
 def rollout_controller(abc, runner: FastRunner, *, start_year: int, prices,
-                       no3_price: float = 0.0) -> dict:
+                       no3_price: float = 0.0, max_n: float | None = None) -> dict:
     """Closed-loop monthly irrigation over the rotation; returns profit dict."""
     a, b, c = _decode_abc(abc)
     month_mm = np.zeros((N_YEARS, N_GROWING), dtype=float)
@@ -96,7 +98,7 @@ def rollout_controller(abc, runner: FastRunner, *, start_year: int, prices,
                 sw, precip = SW_TARGET, PRECIP_NORM
             else:
                 # State from the just-completed prefix: re-run with depths decided so far.
-                plan = plan_from_monthly_i(month_mm)
+                plan = plan_from_monthly_i(month_mm, max_n=max_n)
                 edits = build(plan)
                 edits["time.sim"] = time_sim(start_year, N_YEARS + SPINUP)
                 runner.run(edits)
@@ -114,7 +116,7 @@ def rollout_controller(abc, runner: FastRunner, *, start_year: int, prices,
             depth = float(np.clip(a + b * deficit_sw + c * deficit_p, 0.0, MONTH_DEPTH_MAX))
             month_mm[y, mi] = depth
 
-    plan = plan_from_monthly_i(month_mm)
+    plan = plan_from_monthly_i(month_mm, max_n=max_n)
     edits = build(plan)
     edits["time.sim"] = time_sim(start_year, N_YEARS + SPINUP)
     runner.run(edits)
@@ -129,10 +131,18 @@ def main(argv=None) -> dict:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--budget", type=int, default=5_000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--no3-price", type=float, default=0.0,
+                    help="$/kg N on leached nitrate; must match the arm this row is "
+                         "compared against or the comparison is meaningless")
+    ap.add_argument("--water-price", type=float, default=None,
+                    help="$/mm/ha override for the placeholder DEFAULT_WATER")
     ap.add_argument("--out", type=Path, default=OUT)
     args = ap.parse_args(argv)
 
     prices = average()
+    if args.water_price is not None:
+        prices = replace(prices, water=args.water_price,
+                         label=f"{prices.label}@w={args.water_price:g}")
     train, test = list(TRAIN_YEARS), list(TEST_YEARS)
     evals = max(1, args.budget // len(train))
     x0 = np.array([0.2, 0.3, 0.3])  # mild baseline + some feedback
@@ -144,7 +154,8 @@ def main(argv=None) -> dict:
             for sy in train:
                 try:
                     total += rollout_controller(free, runner, start_year=sy,
-                                                prices=prices)["profit"]
+                                                prices=prices,
+                                                no3_price=args.no3_price)["profit"]
                 except Exception:
                     return 1e9
             return -total / len(train)
@@ -152,13 +163,15 @@ def main(argv=None) -> dict:
         best, n_evals, history = minimise(obj, x0, evals=evals, seed=args.seed)
 
         def score(windows):
-            return [_row(rollout_controller(best, runner, start_year=sy, prices=prices), sy)
+            return [_row(rollout_controller(best, runner, start_year=sy, prices=prices,
+                                            no3_price=args.no3_price), sy)
                     for sy in windows]
 
         train_rows, test_rows = score(train), score(test)
 
     summary = {
         "abc": list(map(float, best)), "decoded": dict(zip("abc", _decode_abc(best))),
+        "no3_price": args.no3_price, "prices": prices.label,
         "n_evals": n_evals, "history": history,
         "train": mean(train_rows), "test": mean(test_rows),
         "per_window_test": test_rows,

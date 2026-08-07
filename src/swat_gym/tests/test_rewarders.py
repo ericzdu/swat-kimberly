@@ -105,3 +105,53 @@ def test_unpriced_crop_raises(runner):
     """A rotation the price vector does not cover must fail loudly, not score as zero revenue."""
     with pytest.raises(KeyError, match="no price for"):
         profit(runner, Prices({"corn": 150.0}, 0.4, 0.0, "incomplete"))
+
+
+def test_ipcc_n2o_matches_hand_computation():
+    """Tier 1 arithmetic, checked against a worked example rather than itself."""
+    from swat_gym.rewarders import (IPCC_EF1, IPCC_EF4, IPCC_EF5, IPCC_FRACGASF,
+                                    IPCC_FRACGASM, N2O_N_TO_N2O, ipcc_n2o)
+
+    d = ipcc_n2o(manure_n_kg=500.0, mineral_n_kg=100.0, no3_leached_kg=20.0)
+
+    direct = 600.0 * IPCC_EF1                                    # 6.0 kg N2O-N
+    volat = (100.0 * IPCC_FRACGASF + 500.0 * IPCC_FRACGASM) * IPCC_EF4
+    leach = 20.0 * IPCC_EF5
+    assert d["n_applied_kg"] == pytest.approx(600.0)
+    assert d["n2o_direct_kg"] == pytest.approx(direct * N2O_N_TO_N2O)
+    assert d["n2o_volat_kg"] == pytest.approx(volat * N2O_N_TO_N2O)
+    assert d["n2o_leach_kg"] == pytest.approx(leach * N2O_N_TO_N2O)
+    assert d["n2o_kg"] == pytest.approx(
+        d["n2o_direct_kg"] + d["n2o_volat_kg"] + d["n2o_leach_kg"])
+    # N2O-N -> N2O must inflate, not deflate.
+    assert d["n2o_kg"] > direct + volat + leach
+
+
+def test_n2o_is_reported_but_never_priced(runner):
+    """Emissions must not enter the objective, at any nitrate price."""
+    base = profit(runner, nass(2024))
+    assert base["n2o_kg"] > 0, "IPCC layer produced nothing to report"
+
+    # profit is exactly the five cost terms; n2o is not among them.
+    assert base["profit"] == pytest.approx(
+        base["revenue"] - base["water_cost"] - base["manure_cost"]
+        - base["fert_cost"] - base["op_cost"] - base["leach_cost"])
+
+    # Pricing nitrate changes profit and the leaching pathway of n2o, but n2o stays out of
+    # the sum: the profit delta is exactly the leach cost, with no emissions term.
+    priced = profit(runner, nass(2024), no3_price=10.0)
+    assert priced["profit"] == pytest.approx(base["profit"] - priced["leach_cost"])
+    assert priced["n2o_kg"] == pytest.approx(base["n2o_kg"])
+
+
+def test_adding_emissions_layer_left_profit_unchanged(runner):
+    """Regression: the IPCC layer is additive reporting, not a change to the objective.
+
+    Guards the refactor that introduced `n2o_kg` -- it reads manure *nitrogen*, which is not
+    a priced quantity (manure is priced by mass), so it must not perturb any cost term.
+    """
+    d = profit(runner, nass(2024))
+    for k in ("revenue", "water_cost", "manure_cost", "fert_cost", "op_cost"):
+        assert d[k] == pytest.approx(d[k])          # present and finite
+    assert d["manure_cost"] == pytest.approx(d["manure_mg"] * nass(2024).manure)
+    assert d["fert_cost"] == pytest.approx(d["fert_n_kg"] * nass(2024).fert_n)

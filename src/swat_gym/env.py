@@ -104,15 +104,51 @@ DEFAULT_ACTION = np.array([
 MEASURED_ROTATION = ("corn", "barl", "alfa", "alfa", "alfa", "corn", "barl")
 
 
+#: Measured GRACEnet manure, per rotation year: ``(Mg/ha, source)``.
+#:
+#: **Why this is not a flat 45 Mg/ha of one source.** `DEFAULT_PLAN` is the "measured practice"
+#: baseline every other arm is scored against, so it has to *nest* measured practice — the same
+#: requirement the irrigation nesting gate enforces for water. It did not for nitrogen. A
+#: uniform 45 Mg/ha of `gn2013` in all four fertilisable years delivers **2,340 kg N/ha** over
+#: the rotation against the field's measured **2,090**, because `MANURE_N_FRAC` varies fourfold
+#: across the four manures (0.0130 / 0.0195 / 0.0041 / 0.0041). Every generated arm therefore
+#: carried +250 kg N/ha (+12 %) that measured practice never received, and every "vs measured"
+#: comparison was a nitrogen contrast as much as an irrigation one.
+#:
+#: Masses and sources from `GraceNet crop and manure amounts.xlsx`, sheet
+#: `Manure Nutrient Properties`. The alfalfa years received none. Date is 10 April in all four
+#: years, which `DEFAULT_ACTION[4]` already encodes.
+MEASURED_MANURE: tuple[tuple[float, str | None], ...] = (
+    (43.8, "gn2013"),   # 2013 corn
+    (48.0, "gn2014"),   # 2014 barley
+    (0.0, None),        # 2015 alfalfa
+    (0.0, None),        # 2016 alfalfa
+    (0.0, None),        # 2017 alfalfa
+    (88.3, "gn2018"),   # 2018 corn
+    (54.3, "gn2019"),   # 2019 barley
+)
+
+
+def _encode_manure(mass_mg: float, source: str | None) -> tuple[float, float]:
+    """``(mass, source)`` -> the two unit-box genes `decode_year` reads at v[3] and v[5]."""
+    lo, hi = _RANGES[3]
+    v3 = (mass_mg - lo) / (hi - lo)
+    # decode_year buckets v[5] by ``int(clip(v,0,0.999) * len(MANURE_SOURCES))``; aim at the
+    # centre of the bucket so float error cannot tip it into a neighbour.
+    idx = MANURE_SOURCES.index(source) if source else 0
+    return v3, (idx + 0.5) / len(MANURE_SOURCES)
+
+
 def _default_plan() -> np.ndarray:
     plan = np.tile(DEFAULT_ACTION, (N_YEARS, 1))
     for i, crop in enumerate(MEASURED_ROTATION):
         plan[i, 0:3] = 0.1
         plan[i, CROPS.index(crop)] = 0.9
+        mass, src = MEASURED_MANURE[i]
+        plan[i, 3], plan[i, 5] = _encode_manure(mass, src)
     return plan
 
 
-DEFAULT_PLAN = _default_plan()
 
 #: Application-timing floor, day of year. **32 (1 February), widened from 60.**
 #:
@@ -142,6 +178,10 @@ _RANGES = {
     11: (3.0, 21.0),              # irrigation interval, days
     12: (0.0, 40.0),              # irrigation depth, mm/event
 }
+
+#: Built here rather than beside :func:`_default_plan` because the per-year
+#: measured manure encoding needs ``_RANGES``.
+DEFAULT_PLAN = _default_plan()
 
 WEATHER_YEARS = (1995, 2025)
 

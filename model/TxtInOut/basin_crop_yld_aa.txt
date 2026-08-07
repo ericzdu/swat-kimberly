@@ -1,3 +1,1 @@
- a10_single_hru            SWAT+ Jun 13 2023       MODULAR Rev 2023.60.5.7                                
-       year     plant_no   plant_name       harv_area(ha)    yld(t)         yld(t/ha)      
-        2025           1 csil               1900.283      0.0000000E+00  0.0000000E+00
+ a10_single_hru            SWAT+ 2026-06-18        MODULAR Rev 2026.62.0.0                                

@@ -20,6 +20,7 @@ INTERVALS = ("daily", "monthly", "yearly", "avann")
 GYM_OUTPUTS: dict[str, set[str]] = {
     "basin_nb": {"yearly"},              # N budget: fertn, fixn, nuptake, mineralisation
     "basin_aqu": {"yearly"},             # no3_rchg — the leaching externality
+    "basin_ls": {"yearly"},              # surqno3, lat3no3, tileno3 — the soil-N loss terms
     # Monthly water / plant-stress tables are the mid-season observation channel for the
     # monthly-cadence env. Yearly rows stay for open-loop scoring and the annual path.
     "hru_wb": {"monthly", "yearly"},     # irr, et, pet, perc, sw_final

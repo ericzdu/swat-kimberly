@@ -1,9 +1,1 @@
- a10_single_hru            SWAT+ Jun 13 2023       MODULAR Rev 2023.60.5.7                                
-  jday,   mon,   day,    yr,   unit , gis_id , name           ,      sedyld,     sedorgn,     sedorgp,     surqno3,     lat3no3,    surqsolp,        usle,     sedminp,     tileno3,     lchlabp,    tilelabp,      satexn
-      ,      ,      ,      ,        ,        ,                ,         tha,        kgha,        kgha,        kgha,        kgha,        kgha,        tons,        kgha,        kgha,        kgha,        kgha,        kgha
-366,12,31,2020,       1,       1,a10_single_hru           ,.316E-02,.172E-01,.197E-02,.574,.254E-03,.272E-01,.00,.258E-02,.00,.00,.00,.00
-365,12,31,2021,       1,       1,a10_single_hru           ,.659E-03,.390E-02,.378E-03,1.87,.372E-04,.390E-01,.00,.718E-03,.00,.00,.00,.00
-365,12,31,2022,       1,       1,a10_single_hru           ,.130E-01,.745E-01,.738E-02,1.43,.585E-04,.629E-01,.00,.134E-01,.00,.00,.00,.00
-365,12,31,2023,       1,       1,a10_single_hru           ,.183E-01,.122,.114E-01,.304,.624E-04,.598E-01,.00,.233E-01,.00,.00,.00,.00
-366,12,31,2024,       1,       1,a10_single_hru           ,.773E-02,.473E-01,.460E-02,.410,.113E-04,.583E-01,.00,.870E-02,.00,.00,.00,.00
-365,12,31,2025,       1,       1,a10_single_hru           ,.193E-01,.118,.113E-01,.274,.320E-04,.461E-01,.00,.218E-01,.00,.00,.00,.00
+ a10_single_hru            SWAT+ 2026-06-18        MODULAR Rev 2026.62.0.0                                

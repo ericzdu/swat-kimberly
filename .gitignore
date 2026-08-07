@@ -3,3 +3,16 @@ runs/
 __pycache__/
 *.pyc
 .DS_Store
+
+# SWAT+ engine spillover in the repo root (regenerates on every run)
+/area_calc.out
+/simulation.out
+/diagnostics.out
+/files_out.out
+/erosion.txt
+/et_nitrogen_calibration_report.txt
+
+# runs/ is ignored wholesale, but these two outlive their generating modules
+# (deleted 2026-08-07) and are cited in rewarders.py / env.py. Keep them tracked.
+!runs/exp1b_price_ratio.json
+!runs/exp1c_cadence_e500.json

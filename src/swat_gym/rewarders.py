@@ -3,9 +3,14 @@
     profit = crop revenue - irrigation cost - manure cost - mineral N cost
              - application-pass cost
 
-Nitrate leaching is deliberately **not** in that sum. Per ``EXPERIMENTS.md`` it is reported
-alongside and run as an on/off ablation, so the result never depends on a shadow price for
-nitrate that would have to be defended.
+Nitrate leaching is **zero-weighted by default** (``no3_price = 0.0``): it is reported as
+``no3_leached_kg`` and does not touch the objective unless a price is passed. When it is
+priced, the price is a **swept axis whose whole frontier is reported**, with the ``no3_price
+= 0`` arm always alongside — so no result rests on a single shadow price that would have to
+be defended. Never publish one interior point of that sweep as *the* answer.
+
+Nitrous oxide is IPCC Tier 1 accounting over the same nitrogen flows (:func:`ipcc_n2o`),
+reported as ``n2o_kg`` and **never** priced into ``profit``.
 
 Why prices are a parameter and not a constant
 ---------------------------------------------
@@ -42,6 +47,60 @@ import pandas as pd
 TON = 0.907185
 #: 1 mm of water over 1 ha = 10 m**3
 M3_PER_MM_HA = 10.0
+
+# -- IPCC Tier 1 nitrous-oxide accounting ------------------------------------------------
+# Defaults from the 2019 Refinement to the 2006 IPCC Guidelines, Vol. 4 Ch. 11 (Tier 1).
+#
+# This is an **accounting layer over simulated nitrogen flows, not a simulated N2O flux.**
+# SWAT+ rev 62 does not emit N2O. Its `denit` column would be the obvious proxy and costs
+# nothing to read, but at this model's calibrated parameters denitrification is effectively
+# off (`denit_exp` 0.001 against a SWAT default near 1.4; `denit_frac` 1.0, firing only at
+# saturation), so it would report a near-constant zero. Re-enabling it means re-fitting a
+# nitrogen cycle that is calibrated against a measured soil-nitrate trajectory.
+#
+# One deviation from Tier 1, in the direction of the model: the indirect leaching term
+# normally applies `FracLEACH` to applied N, because an inventory has no transport model.
+# Here the leached quantity is simulated, so `EF5` is applied to `no3_rchg` directly. That is
+# strictly better information -- and it inherits whatever bias the percolation pathway has,
+# which is why `n2o_kg` is reported and never priced into `profit`.
+#
+# TODO(before submission): verify these six values against the published tables. They are the
+# standard Tier 1 defaults but have not been checked against the source document in-repo.
+#: Direct N2O-N per kg N applied.
+IPCC_EF1 = 0.010
+#: Indirect N2O-N per kg N volatilised as NH3/NOx.
+IPCC_EF4 = 0.010
+#: Indirect N2O-N per kg N lost to leaching/runoff.
+IPCC_EF5 = 0.011
+#: Fraction of applied *synthetic* N volatilising.
+IPCC_FRACGASF = 0.11
+#: Fraction of applied *organic* (manure) N volatilising.
+IPCC_FRACGASM = 0.21
+#: N2O-N -> N2O by molecular mass.
+N2O_N_TO_N2O = 44.0 / 28.0
+
+
+def ipcc_n2o(*, manure_n_kg: float, mineral_n_kg: float, no3_leached_kg: float) -> dict:
+    """IPCC Tier 1 N2O (kg N2O/ha) from applied nitrogen and simulated nitrate loss.
+
+    Returns the three pathways separately so a reader can see which dominates; in an
+    irrigation experiment nitrogen is pinned, so `direct` and `volatilisation` are constant
+    across arms and only `leaching` moves.
+    """
+    n_applied = float(manure_n_kg) + float(mineral_n_kg)
+    direct = n_applied * IPCC_EF1
+    volatilised = (float(mineral_n_kg) * IPCC_FRACGASF
+                   + float(manure_n_kg) * IPCC_FRACGASM)
+    indirect_vol = volatilised * IPCC_EF4
+    indirect_leach = float(no3_leached_kg) * IPCC_EF5
+    n2o_n = direct + indirect_vol + indirect_leach
+    return {
+        "n2o_kg": n2o_n * N2O_N_TO_N2O,
+        "n2o_direct_kg": direct * N2O_N_TO_N2O,
+        "n2o_volat_kg": indirect_vol * N2O_N_TO_N2O,
+        "n2o_leach_kg": indirect_leach * N2O_N_TO_N2O,
+        "n_applied_kg": n_applied,
+    }
 
 
 def _hay_to_mg_dm(usd_per_ton: float, moisture: float = 0.12) -> float:
@@ -255,11 +314,15 @@ def profit(runner, prices: Prices, *, manure_mg: float | None = None,
     # the pass count cannot be recovered from a caller-supplied total, since 400 kg N in one
     # pass and in four passes give the same total and different costs.
     n_events = 0
+    manure_n_kg = None
     if manure_mg is None or fert_n_kg is None or prices.fert_op:
         sch = (runner.workdir / "management.sch").read_text()
         frt = (runner.workdir / "fertilizer.frt").read_text()
         applied = fert_applied(sch, frt)
         n_events = int((applied["mg_ha"] > 0).sum())
+        # Organic N, for the emissions accounting only: it is priced by *mass* (manure_mg),
+        # never by N content, so this must not touch any cost term below.
+        manure_n_kg = float(applied.loc[applied["kind"] == "manure", "n_kg_ha"].sum())
         if manure_mg is None:
             manure_mg = float(applied.loc[applied["kind"] == "manure", "mg_ha"].sum())
         if fert_n_kg is None:
@@ -274,6 +337,11 @@ def profit(runner, prices: Prices, *, manure_mg: float | None = None,
     op_cost = n_events * prices.fert_op
     leach_cost = no3 * no3_price
 
+    if manure_n_kg is None:  # caller supplied both totals and no pass is priced
+        manure_n_kg = 0.0
+    n2o = ipcc_n2o(manure_n_kg=manure_n_kg, mineral_n_kg=float(fert_n_kg),
+                   no3_leached_kg=no3)
+
     return {
         "label": prices.label,
         "revenue": revenue,
@@ -286,6 +354,8 @@ def profit(runner, prices: Prices, *, manure_mg: float | None = None,
         # Reported alongside, never silently inside `profit` unless no3_price was set.
         "no3_leached_kg": no3,
         "leach_cost": leach_cost,
+        # IPCC Tier 1 accounting; reported only, never priced into `profit`.
+        **n2o,
         "irrigation_mm": irrigation_mm,
         "manure_mg": manure_mg,
         "fert_n_kg": fert_n_kg,

@@ -262,6 +262,8 @@ def train_policy(arm, args, cfg, prices, max_n, seed: int):
     from stable_baselines3.common.callbacks import CheckpointCallback
     from stable_baselines3.common.vec_env import SubprocVecEnv
 
+    from ._progress import ppo_callbacks
+
     scfg = {**cfg, "ppo_seed": seed}
     tag = f"ppo_s{seed}"
     ppo_path = args.out.with_name(f"{args.out.stem}_{tag}.zip")
@@ -285,15 +287,18 @@ def train_policy(arm, args, cfg, prices, max_n, seed: int):
             # sigma~0.37 on a unit box; SB3's default sigma=1 explores almost entirely in the
             # clipped region.
             print(f"  seed {seed}: training {args.budget} timesteps", flush=True)
-            model = PPO("MlpPolicy", venv, seed=seed, verbose=1,
+            model = PPO("MlpPolicy", venv, seed=seed, verbose=0,
                         n_steps=max(64, N_YEARS * 8), batch_size=max(32, N_YEARS * 4),
                         gamma=1.0, policy_kwargs={"log_std_init": -1.0})
         remaining = args.budget - model.num_timesteps
         if remaining > 0:
+            ckpt = CheckpointCallback(save_freq=max(1, args.budget // 20),
+                                      save_path=str(ckpt_dir), name_prefix="ppo")
+            from ._progress import ppo_progress_bar
             model.learn(
                 total_timesteps=remaining, reset_num_timesteps=False,
-                callback=CheckpointCallback(save_freq=max(1, args.budget // 20),
-                                            save_path=str(ckpt_dir), name_prefix="ppo"),
+                callback=ppo_callbacks(ckpt),
+                progress_bar=ppo_progress_bar(),
             )
         model.save(str(ppo_path.with_suffix("")))
         _save_stage(args.out, tag, scfg, {"num_timesteps": int(model.num_timesteps)})

@@ -22,6 +22,12 @@ CALIBRATABLE = frozenset({
     "hydrology.hyd",   # esco, epco, perco, cn3_swf, pet_co, can_max
     "parameters.bsn",  # basin N/P cycling: orgn_min, n_uptake, n_perc, rsd_decomp
     "soils.sol",       # awc, soil_k, carbon by layer
+    "nutrients.sol",   # initial pools + fr_hum_act, the active/stable humus N split
+    # The *operative* harvest index. ``plants.plt:harv_idx`` is inert for every crop in this
+    # rotation: all three are harvested by ``hvkl`` against a ``harv.ops`` row whose
+    # ``harv_typ`` is ``biomass``, and that path reads the harvest index from here. Sweeping
+    # the plants.plt column across its full range leaves the output bit-identical.
+    "harv.ops",
 })
 
 #: Which line the column-name header sits on, per file. Rows follow it.
@@ -30,7 +36,18 @@ HEADER_LINE = {
     "hydrology.hyd": 1,
     "parameters.bsn": 1,
     "soils.sol": 1,
+    "nutrients.sol": 1,
+    "harv.ops": 1,
 }
+
+#: Columns that SWAT+ reads as Fortran integers. List-directed input of ``120.00000`` into an
+#: integer field silently mis-parses under gfortran (rev 62), shifting every later column on
+#: that row — the Kimberly yield collapse on first 62 bring-up was exactly this for
+#: ``days_mat``. Write these without a decimal point.
+INTEGER_COLUMNS = frozenset({
+    ("plants.plt", "days_mat"),
+    ("plants.plt", "yrs_mat"),
+})
 
 
 @dataclass(frozen=True)
@@ -86,7 +103,10 @@ def set_value(text: str, file: str, row: str, column: str, value: float) -> str:
     parts = lines[i].split()
     if col_i >= len(parts):
         raise KeyError(f"{file}: row {row!r} has {len(parts)} fields, need index {col_i}")
-    parts[col_i] = f"{value:.5f}"
+    if (file, column) in INTEGER_COLUMNS:
+        parts[col_i] = str(int(round(value)))
+    else:
+        parts[col_i] = f"{value:.5f}"
     lines[i] = "  ".join(parts) + "  "
     return "\n".join(lines) + "\n"
 

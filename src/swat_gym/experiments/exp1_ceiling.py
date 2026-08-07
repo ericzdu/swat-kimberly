@@ -1,9 +1,15 @@
-"""Perfect-foresight adaptivity ceiling for monthly irrigation (Exp 1 gate).
+"""Perfect-foresight value for monthly irrigation (Exp 1 gate).
 
 Optimise a *separate* open-loop monthly schedule for each weather window (oracle), and
 compare the mean to one *shared* schedule optimised across all training windows. The gap is
-the value of perfect information — an absolute upper bound on what any adaptive policy can
-earn with any observation.
+the value of perfect information: how much of the achievable profit depends on knowing which
+weather year you are in.
+
+**It is an estimate, not a ceiling — do not report it as an upper bound.** Each per-window
+oracle is itself a finite-budget CMA-ES search over 42 dimensions and can be under-converged,
+which biases the gap *down*. A learned policy exceeding it is therefore possible and has been
+observed; that indicates an under-converged oracle, not a policy that beat perfect
+information. The keys are ``foresight_train`` / ``foresight_test`` for that reason.
 
 If the gap is inside the ~200–300 $/ha noise floor, Exp 1's adaptivity answer is already
 known and cluster PPO should be skipped.
@@ -26,16 +32,17 @@ from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage
 from ._focused import ROOT, _row, mean, paired
 from ._optimize import minimise
 
-#: Noise floor from prior cadence/N sweeps — ceiling must clear this to justify PPO.
+#: Noise floor from prior cadence/N sweeps — foresight value must clear this to justify PPO.
 NOISE_FLOOR = 250.0
 
 OUT = ROOT / "runs" / "exp1_ceiling.json"
 
 
-def _score_shared(x, windows, prices, no3_price):
+def _score_shared(x, windows, prices, no3_price, max_n):
     with FastRunner() as runner:
         return [_row(evaluate_monthly_i(x, runner, prices=prices, start_year=sy,
-                                        no3_price=no3_price), sy) for sy in windows]
+                                        no3_price=no3_price, max_n=max_n), sy)
+                for sy in windows]
 
 
 def main(argv=None) -> dict:
@@ -50,6 +57,8 @@ def main(argv=None) -> dict:
     args = ap.parse_args(argv)
 
     prices = average()
+    # Must match the policy path's cap so foresight is comparable to the PPO rows.
+    max_n = None
     train = list(TRAIN_YEARS)
     test = list(TEST_YEARS)
     x0 = default_monthly_i_free()
@@ -65,7 +74,8 @@ def main(argv=None) -> dict:
             for sy in train:
                 try:
                     total += evaluate_monthly_i(free, runner, prices=prices,
-                                                start_year=sy)["profit"]
+                                                start_year=sy,
+                                                max_n=max_n)["profit"]
                 except Exception:
                     return 1e9
             return -total / len(train)
@@ -73,8 +83,8 @@ def main(argv=None) -> dict:
         shared_x, n_shared, hist_shared = minimise(
             shared_obj, x0, evals=evals_shared, seed=args.seed)
 
-    shared_train = _score_shared(shared_x, train, prices, 0.0)
-    shared_test = _score_shared(shared_x, test, prices, 0.0)
+    shared_train = _score_shared(shared_x, train, prices, 0.0, max_n)
+    shared_test = _score_shared(shared_x, test, prices, 0.0, max_n)
     print(f"  shared train {mean(shared_train):.0f}  test {mean(shared_test):.0f}", flush=True)
 
     # Oracle: separate schedule per train window, then also per test window for the ceiling.
@@ -86,11 +96,13 @@ def main(argv=None) -> dict:
             def obj(free, sy=sy):
                 try:
                     return -evaluate_monthly_i(free, runner, prices=prices,
-                                               start_year=sy)["profit"]
+                                               start_year=sy,
+                                               max_n=max_n)["profit"]
                 except Exception:
                     return 1e9
             x, n, hist = minimise(obj, x0, evals=evals_pw, seed=args.seed + sy)
-            d = evaluate_monthly_i(x, runner, prices=prices, start_year=sy)
+            d = evaluate_monthly_i(x, runner, prices=prices, start_year=sy,
+                                   max_n=max_n)
             oracles[sy] = {"x": list(map(float, x)), "n_evals": n,
                            "profit": d["profit"], "irrigation_mm": d["irrigation_mm"],
                            "history": hist}
@@ -106,19 +118,21 @@ def main(argv=None) -> dict:
     oracle_test = []
     with FastRunner() as runner:
         for sy in test:
-            d = evaluate_monthly_i(oracles[sy]["x"], runner, prices=prices, start_year=sy)
+            d = evaluate_monthly_i(oracles[sy]["x"], runner, prices=prices,
+                                   start_year=sy, max_n=max_n)
             oracle_test.append(_row(d, sy))
 
     # Also score train oracles with full _row for paired comparison.
     oracle_train = []
     with FastRunner() as runner:
         for sy in train:
-            d = evaluate_monthly_i(oracles[sy]["x"], runner, prices=prices, start_year=sy)
+            d = evaluate_monthly_i(oracles[sy]["x"], runner, prices=prices,
+                                   start_year=sy, max_n=max_n)
             oracle_train.append(_row(d, sy))
 
-    ceiling_train = mean(oracle_train) - mean(shared_train)
-    ceiling_test = mean(oracle_test) - mean(shared_test)
-    gate_pass = ceiling_test > NOISE_FLOOR
+    foresight_train = mean(oracle_train) - mean(shared_train)
+    foresight_test = mean(oracle_test) - mean(shared_test)
+    gate_pass = foresight_test > NOISE_FLOOR
 
     summary = {
         "train_years": train, "test_years": test,
@@ -129,12 +143,12 @@ def main(argv=None) -> dict:
         "oracle": {"train": mean(oracle_train), "test": mean(oracle_test),
                    "per_window": {str(k): {"profit": v["profit"], "n_evals": v["n_evals"]}
                                   for k, v in oracles.items()}},
-        "ceiling_train": ceiling_train,
-        "ceiling_test": ceiling_test,
+        "foresight_train": foresight_train,
+        "foresight_test": foresight_test,
         "paired_test": paired(oracle_test, shared_test),
         "gate_pass": gate_pass,
         "gate_note": (
-            f"ceiling {ceiling_test:+.0f} $/ha "
+            f"foresight {foresight_test:+.0f} $/ha "
             f"{'exceeds' if gate_pass else 'inside'} noise floor {NOISE_FLOOR:.0f} — "
             f"{'proceed to PPO' if gate_pass else 'skip cluster PPO; write bounded null'}"
         ),
@@ -142,7 +156,7 @@ def main(argv=None) -> dict:
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(summary, indent=2))
-    print(f"\nceiling train {ceiling_train:+.0f}  test {ceiling_test:+.0f} $/ha")
+    print(f"\nforesight train {foresight_train:+.0f}  test {foresight_test:+.0f} $/ha")
     print(summary["gate_note"])
     print(f"-> {args.out}")
     return summary

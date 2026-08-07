@@ -20,3 +20,4 @@ forest_heavy           0.80000       0.70000       0.90000  Forest_heavy
 urban_asphalt          0.01100       0.01100       0.01100  Urban_asphalt
 urban_concrete         0.01200       0.01200       0.01200  Urban_concrete
 urban_rubble           0.02400       0.02400       0.02400  Urban_rubble
+kimb_ref  0.14000  0.14000  0.14000  Kimberly_reference_OV_N
