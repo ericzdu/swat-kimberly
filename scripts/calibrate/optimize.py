@@ -46,40 +46,21 @@ from calib_report import collect, pbias  # noqa: E402
 from n_trajectory import score as no3_score  # noqa: E402
 from n_trajectory import trajectory  # noqa: E402
 
-#: The site's own calibrated SWAT crop table (``data/crop_params_swat.csv``) is a real prior,
-#: not a template default, so parameters that *have* a value there are allowed to move only
-#: within a stated window around it rather than across a wide engineering range.
-WINDOW = 0.30
-
-#: crop -> (bm_e, lai_pot) as the site table gives them. Kept here rather than read from the
-#: CSV so the bounds in a saved fit are reproducible from this file alone.
+#: **Crop coefficients are not fitted here — CLAUDE.md rule 11b.** ``bm_e``, ``lai_pot``, the
+#: canopy curve and the ``harv.ops`` harvest indices are the collaborator's calibrated workbook
+#: values and are applied *exactly* (`scripts/port_crops.py`, `scripts/port_management.py`).
+#: This module used to open a +/-30 % window around each of them. Measured before removing it
+#: (2026-08-07): fitting those nine parameters bought 2.3 points of mean |PBIAS| — 37.1 % ->
+#: 34.8 % — and paid for it by making every alfalfa year 14-17 points *worse*, while producing
+#: a ``corn.bm_e`` of 64.5 that absorbed the resident-perennial artefact and so hid a structural
+#: error inside a parameter. The workbook values leave that bias visible, which is the point.
+#: Domain ownership sits with the collaborator; we own the protocol, not the agronomy.
 #:
-#: ``harv_idx`` is deliberately **not** taken from ``plants.plt``. That column is inert for
-#: every crop in this rotation: all three are harvested by ``hvkl`` against a ``harv.ops`` row
-#: with ``harv_typ = biomass``, and SWAT+ reads the harvest index from *there*. A full-range
-#: sweep of ``plants.plt:corn.harv_idx`` (0.71 -> 1.31) leaves every output bit-identical. An
-#: earlier fit spent a dimension on it and parked it at a bound, which looked like a pinned
-#: parameter and was really a dead one.
-SITE = {"corn": (50.0, 4.0), "barl": (28.0, 4.0), "alfa": (17.0, 5.0)}
-
-#: The operative harvest index, ``harv.ops`` rows referenced by the ``hvkl`` operations. These
-#: came from the ArcSWAT reference (the rows are tagged ``reference_HI_override``). Capped at
-#: 1.0 because for ``harv_typ = biomass`` this is the harvested *fraction* of standing biomass.
-HARVEST = {"gn_corn": 0.98, "gn_barl": 0.54, "gn_alfa": 0.95}
-
-
-def _windowed() -> list[Param]:
-    out = []
-    for crop, (bm_e, lai_pot) in SITE.items():
-        for column, value in (("bm_e", bm_e), ("lai_pot", lai_pot)):
-            out.append(Param("plants.plt", crop, column,
-                             round(value * (1 - WINDOW), 4), round(value * (1 + WINDOW), 4)))
-    for row, value in HARVEST.items():
-        out.append(Param("harv.ops", row, "harv_idx",
-                         round(value * (1 - WINDOW), 4), round(min(1.0, value * (1 + WINDOW)), 4)))
-    return out
-
-
+#: ``plants.plt:harv_idx`` would be a dead dimension regardless: all three crops are harvested
+#: by ``hvkl`` against a ``harv.ops`` row with ``harv_typ = biomass``, so SWAT+ reads the
+#: harvest index from *there* and a full-range sweep of the ``plants.plt`` column (0.71 -> 1.31)
+#: leaves every output bit-identical.
+#:
 #: Columns with **no value anywhere in the site table** — a10 template defaults that nobody
 #: chose. These get engineering-range bounds because there is no prior to stay near.
 #:
@@ -90,7 +71,7 @@ def _windowed() -> list[Param]:
 #: and no measurement here constrains it, so fitting it would be fitting noise. ``pet_co`` is
 #: excluded because it is already fitted to a measurement (CLAUDE.md rule 10); letting the
 #: yield objective pull on it would undo that silently.
-UNSOURCED = [
+PARAMS = [
     # alfalfa's minimum LAI is imposed on the HRU in every year of the rotation — see
     # port_crops.OVERRIDES for why this is a trade-off point rather than a "lower is better" knob.
     Param("plants.plt", "alfa", "lai_min", 0.10, 2.50),
@@ -103,8 +84,6 @@ UNSOURCED = [
     Param("nutrients.sol", "soilnut1", "fr_hum_act", 0.010, 0.250),
     Param("parameters.bsn", "", "n_perc", 0.01, 1.00),
 ]
-
-PARAMS = _windowed() + UNSOURCED
 
 #: Both terms are in percent, so they are directly comparable and the weights mean what they
 #: look like.
@@ -199,8 +178,7 @@ def main() -> None:
     calls = {"n": 0, "best": np.inf}
 
     print(f"{len(PARAMS)} free parameters "
-          f"({len(_windowed())} windowed +/-{int(WINDOW * 100)} % around the site table, "
-          f"{len(UNSOURCED)} unsourced)\n")
+          "(all unsourced; crop coefficients are the collaborator's, not fitted)\n")
 
     with FastRunner(editable=EDITABLE | CALIBRATABLE) as runner:
         base = terms(runner, sources, defaults)
@@ -264,7 +242,7 @@ def main() -> None:
             "parameters": {p.name: {"file": p.file, "row": p.row, "column": p.column,
                                     "default": defaults[p], "fitted": best[p],
                                     "bounds": [p.low, p.high]} for p in PARAMS},
-            "weights": WEIGHTS, "window": WINDOW, "evaluations": calls["n"],
+            "weights": WEIGHTS, "evaluations": calls["n"],
             "held_at_sourced_value": sorted(args.hold),
         }, indent=2))
         print(f"\n-> {args.out}")

@@ -80,7 +80,7 @@ ROOT = Path(__file__).resolve().parents[3]
 assert_no_leakage()
 
 
-def _row(d: dict, start_year: int) -> dict:
+def _row(d: dict, start_year: int, *, yield_mg: float | None = None) -> dict:
     """One window's outcome, with the profit identity kept separable — see the module docstring.
 
     ``revenue - water_cost - manure_cost - fert_cost - op_cost`` reconstructs ``profit``
@@ -92,7 +92,9 @@ def _row(d: dict, start_year: int) -> dict:
             "manure_cost": d["manure_cost"], "fert_cost": d["fert_cost"],
             "op_cost": d["op_cost"], "n_fert_events": d["n_fert_events"],
             "irrigation_mm": d["irrigation_mm"], "manure_mg": d["manure_mg"],
-            "fert_n_kg": d["fert_n_kg"], "no3": d["no3_leached_kg"]}
+            "fert_n_kg": d["fert_n_kg"], "no3": d["no3_leached_kg"],
+            # Reported, never priced: intensity metrics need them and they cost nothing here.
+            "n2o_kg": d.get("n2o_kg"), "yield_mg": yield_mg}
 
 
 def paired(a: list[dict], b: list[dict]) -> dict:

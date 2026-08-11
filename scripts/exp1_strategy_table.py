@@ -17,7 +17,8 @@ from stable_baselines3 import PPO
 from swat_gym.env import N_YEARS, SPINUP, time_sim
 from swat_gym.experiments._focused import _row, mean
 from swat_gym.experiments.exp1_controller import rollout_controller
-from swat_gym.experiments.exp1_irrigation import score_month_plan
+from swat_gym.experiments.exp1_irrigation import NORMALISE_OBS, score_month_plan
+from swat_gym.obsnorm import ObsNorm, apply as apply_obsnorm
 from swat_gym.fastrunner import FastRunner
 from swat_gym.monthly import default_monthly_i_free, evaluate_monthly_i
 from swat_gym.monthly_env import MonthlySwatEnv
@@ -78,7 +79,9 @@ def score_controller(abc, test, prices, no3_price):
     return _agg(rows, ylds)
 
 
-def score_policy(model, test, prices, no3_price, label: str = "policy"):
+def score_policy(model, test, prices, no3_price, obsnorm, label: str = "policy"):
+    """``obsnorm`` is required — see :mod:`swat_gym.obsnorm`. A normalised policy scored on raw
+    observations is a different objective, and nothing in the output would reveal it."""
     rows, ylds, plans = [], [], {}
     with MonthlySwatEnv(stochastic_weather=False, prices=prices, no3_price=no3_price,
                         arm="I", max_n=None) as env:
@@ -87,7 +90,7 @@ def score_policy(model, test, prices, no3_price, label: str = "policy"):
             done = False
             info: dict = {}
             while not done:
-                action, _ = model.predict(obs, deterministic=True)
+                action, _ = model.predict(apply_obsnorm(obsnorm, obs), deterministic=True)
                 obs, _, term, trunc, info = env.step(action)
                 done = bool(term or trunc)
             y = env.runner.yields()
@@ -215,7 +218,14 @@ def main() -> None:
 
     print(f"=== PPO seed {rep} ===", flush=True)
     model = PPO.load(str(RUNS / f"exp1_irrigation_ppo_s{rep}.zip"))
-    policy, _ = score_policy(model, test, prices, no3_price, "policy")
+    # Load the observation filter the policy was trained with, or refuse: scoring a normalised
+    # policy on raw observations produces plausible numbers for a different objective.
+    nrm = RUNS / f"exp1_irrigation_ppo_s{rep}_obsnorm.npz"
+    obsnorm = ObsNorm.load(nrm) if nrm.is_file() else None
+    if obsnorm is None and NORMALISE_OBS:
+        raise SystemExit(f"{nrm.name} missing but exp1_irrigation trains with normalisation — "
+                         "retrain, or score with the matching filter.")
+    policy, _ = score_policy(model, test, prices, no3_price, obsnorm, "policy")
 
     print("=== frozen (train-selected) ===", flush=True)
     with MonthlySwatEnv(stochastic_weather=False, prices=prices, no3_price=no3_price,
@@ -225,7 +235,7 @@ def main() -> None:
             obs, _ = env.reset(start_year=sy)
             done = False
             while not done:
-                action, _ = model.predict(obs, deterministic=True)
+                action, _ = model.predict(apply_obsnorm(obsnorm, obs), deterministic=True)
                 obs, _, term, trunc, _ = env.step(action)
                 done = bool(term or trunc)
             plans_tr[sy] = env.month_mm.copy()

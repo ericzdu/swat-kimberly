@@ -52,11 +52,28 @@ M3_PER_MM_HA = 10.0
 # Defaults from the 2019 Refinement to the 2006 IPCC Guidelines, Vol. 4 Ch. 11 (Tier 1).
 #
 # This is an **accounting layer over simulated nitrogen flows, not a simulated N2O flux.**
-# SWAT+ rev 62 does not emit N2O. Its `denit` column would be the obvious proxy and costs
-# nothing to read, but at this model's calibrated parameters denitrification is effectively
-# off (`denit_exp` 0.001 against a SWAT default near 1.4; `denit_frac` 1.0, firing only at
-# saturation), so it would report a near-constant zero. Re-enabling it means re-fitting a
-# nitrogen cycle that is calibrated against a measured soil-nitrate trajectory.
+# No SWAT variant in the official line emits N2O: the engine computes *total* denitrification
+# with N2 and N2O lumped and never partitions them, which is why the N2O literature on this
+# model (SWAT-N2O coupler; Wagena et al. 2017) is entirely forks and add-ons.
+#
+# The `denit` column is the obvious proxy and is already printed, in `basin_nb`/`hru_nb`.
+# **Measured 2026-08-07, not inferred:** it is 0.001 kg N/ha over the rotation, against
+# 297.5 fertiliser + 138.6 fixation. Denitrification is off here by calibration
+# (`denit_exp` 0.001 vs a SWAT default near 1.4; `denit_frac` 1.0, firing only at saturation).
+# So partitioning N2O out of `denit`, which is what the coupler approach does, would return
+# zero. Getting a non-zero number means reimplementing denitrification itself -- but the
+# nitrogen cycle here is calibrated against a measured soil-nitrate trajectory *with*
+# denitrification suppressed, so adding it back in post-processing double-counts: it would
+# credit N2O to nitrogen the engine still holds in its nitrate pool and still leaches.
+#
+# Two dead ends, recorded so they are not retried:
+#   * `carbon = 1` in codes.bsn does NOT print N2O and is NOT a print flag -- it switches on
+#     the Century C/N module and wrecks the calibration. Measured in an isolated copy: corn
+#     yield 5.96 -> 2.85 t/ha, N uptake 286.8 -> 240.3, aquifer NO3 recharge 0.039 -> 0.077.
+#     `basin_carbon_all.txt` stayed an unpopulated template even with the flag on.
+#   * There is no measured N2O at this site. The GRACEnet and Long-Term Manure source
+#     workbooks carry no gas-flux data of any kind, so a reimplemented routine could not be
+#     validated here even if the mass-balance problem above were solved.
 #
 # One deviation from Tier 1, in the direction of the model: the indirect leaching term
 # normally applies `FracLEACH` to applied N, because an inventory has no transport model.

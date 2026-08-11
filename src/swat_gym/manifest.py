@@ -24,6 +24,23 @@ def _tokens(line: str) -> list[str]:
     return [t for t in line.split() if t and t != "null"]
 
 
+#: Inputs whose absence corrupts a run **without** failing it.
+#:
+#: `input_files` deliberately skips declared-but-missing entries because SWAT+ tolerates a
+#: missing *optional* input. `plants.plt` is not optional: deleted, the engine still exits 0
+#: and still writes `basin_crop_yld_yr.txt`, but the crop-name column contains entries from its
+#: internal file table (`checker.out`, `hru_wb_mon.txt`) — it reads past the end of the plant
+#: array into adjacent memory. Downstream that surfaces as a `UnicodeDecodeError` from pandas
+#: on a NUL byte, which points at the reader rather than the cause and cost an hour to trace.
+#: Fail at construction instead.
+REQUIRED = frozenset({
+    "file.cio", "time.sim", "print.prt",
+    "plants.plt",        # crop parameter database — silent corruption when absent
+    "management.sch", "irr.ops", "fertilizer.frt", "tillage.til", "harv.ops",
+    "hru.con", "hru-data.hru", "soils.sol", "plant.ini",
+})
+
+
 def input_files(txtinout: Path) -> set[str]:
     """Return the names of every file SWAT+ reads from ``txtinout``.
 
@@ -49,4 +66,11 @@ def input_files(txtinout: Path) -> set[str]:
                 if (txtinout / token).is_file():
                     names.add(token)
 
+    missing = sorted(n for n in REQUIRED if not (txtinout / n).is_file())
+    if missing:
+        raise FileNotFoundError(
+            f"{txtinout} is missing required SWAT+ input(s): {missing}. "
+            "These do not fail the engine — it exits 0 and writes structurally valid output "
+            "with garbage in it. Restore them (e.g. `git checkout -- model/TxtInOut/`) "
+            "before running anything.")
     return names

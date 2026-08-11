@@ -110,6 +110,20 @@ Suggested map after Exp 1 smoke is green:
 - [ ] `exp1_ceiling` written; if `gate_pass` false, skip PPO
 - [ ] Water price sourced or breakeven reported (re-optimize under sweep when sourced)
 
+**Sustainability gates.** Nitrate is the second objective, not an annotation, so an experiment is
+not done when the profit column is filled in.
+
+- [ ] **The λ_n frontier is produced, not just the λ_n = 0 arm.** Every experiment ships a sweep,
+      never a single price (hard rule 1). `NO3_PRICE=<λ> OUT_TAG=<tag> bash scripts/rerun_exp1.sh`
+      gives **one point**; the deliverable is the set. Publishing one interior point as "the"
+      answer is the failure rule 1 exists to prevent.
+- [ ] **The leaching column is non-degenerate before any sustainability claim.** At measured
+      practice the signal is sparse across windows — 2.40 kg/ha/yr in the 2013-start window and
+      ~0 in the other four (OPEN_ITEMS #11). If the arms being compared do not separate on
+      leaching, report that as the finding; do not report a frontier drawn through noise.
+- [ ] **Both limits restated wherever a sustainability claim is made:** leaching unvalidated on
+      site, N₂O Tier 1 accounting and never priced.
+
 ## Deleted 2026-08-07 (recover from git history if ever needed)
 
 The tree now holds only modules that are live for the paper. Everything below was removed in one
@@ -124,6 +138,16 @@ predating `swat_gym.windows` and overlapping by seven of eight calendar years. T
 **Superseded by the monthly pivot.** `exp1_ablation.py` (six-arm combination ablation) and the
 old-numbering redirects `exp1_nitrogen.py` / `exp2_irrigation.py` (thin shims to Exp 2 / Exp 1 —
 pre-pivot command lines no longer resolve).
+
+**Off the path to the goal.** `scripts/n_response.py` (mineral-N sweep; the `max_n` question it
+asked is now threaded explicitly through `env.py` and answered by `runs/exp1_nitrogen_uncapped*`),
+`scripts/exp1_weekly.py` + `src/swat_gym/weekly.py` (weekly action space — Exp 1 is locked to a
+monthly Apr–Sep cadence, and nothing imported the module), and the two ports whose own docstrings
+declared them dead: `scripts/port_solar.py` (RETIRED — claimed an ArcSWAT gauge it was not reading)
+and `scripts/port_weather.py` (SUPERSEDED by `port_agrimet.py`; the last RuFaS dependency). Neither
+port is in `build_model.sh`. Their *findings* survive in PROVENANCE §3 and §5 — only the code is
+gone. `scripts/event_size_check.py` had the one import from `weekly.py`; `WEEK_START_DOY` is now
+inlined there.
 
 **Retired sweeps whose *results* remain load-bearing.** `exp1b_price_ratio.py` and
 `exp1c_cadence.py`, plus `tests/test_cadence.py` which imported the latter. The code is gone but

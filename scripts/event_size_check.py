@@ -31,10 +31,13 @@ from swat_gym.fastrunner import FastRunner
 from swat_gym.monthly import default_monthly_irr
 from swat_gym.rewarders import average, profit
 from swat_gym.schedule import CALENDAR, _doy, build
-from swat_gym.weekly import WEEK_START_DOY
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "runs" / "event_size_check.json"
+
+#: 1 April — first irrigation day of the growing season. Inlined when the weekly action space
+#: was removed 2026-08-07; it was the only thing this script used from it.
+WEEK_START_DOY = _doy(4, 1)
 
 #: Events per growing season. 6 is the monthly arm, 26 the weekly one.
 N_EVENTS = (3, 6, 13, 26, 52)

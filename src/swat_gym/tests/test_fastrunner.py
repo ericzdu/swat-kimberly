@@ -165,3 +165,24 @@ def test_read_strips_units_row(baseline):
     assert wb["et"].dtype.kind == "f"
     assert "mm" not in wb["yr"].astype(str).values
     assert wb["yr"].min() >= 2012
+
+
+def test_missing_required_input_fails_loudly(tmp_path):
+    """A deleted `plants.plt` must abort, not silently corrupt every run.
+
+    Without it SWAT+ exits 0 and writes `basin_crop_yld_yr.txt` with its own filename table in
+    the crop-name column. Every downstream number is then garbage while nothing looks wrong.
+    """
+    import shutil
+
+    from swat_gym.fastrunner import TXTINOUT
+    from swat_gym.manifest import REQUIRED, input_files
+
+    src = tmp_path / "TxtInOut"
+    shutil.copytree(TXTINOUT, src)
+    assert input_files(src)                      # intact tree is fine
+
+    (src / "plants.plt").unlink()
+    with pytest.raises(FileNotFoundError, match="plants.plt"):
+        input_files(src)
+    assert "plants.plt" in REQUIRED

@@ -3,8 +3,8 @@
     "engine": "swatplus_rev62.0.0",
     "platform": "macOS-26.4-arm64-arm-64bit",
     "machine": "arm64",
-    "regenerated": "2026-07-31",
-    "model": "Calibrated to the GRACEnet measurements on this field (scripts/calibrate/optimize.py, 15,616 evals). Objective is per-year yield error over all seven rotation years plus the newly-extracted seven-year April soil-nitrate trajectory, with PET held as a bound against measured AgriMet ETos. Yield RMS per-year 25.5% -> 13.6%, PBIAS -9.8% -> -3.0% (corn -7.0, alfa +2.2, barl -4.9), PET unchanged at +0.0%. n_perc and fr_hum_act are held at their sourced values: the fit moved both but doing so made yield worse. Also repoints the harvest index at harv.ops, where the engine actually reads it - plants.plt:harv_idx is inert for this rotation (PROVENANCE 5i, 5j).",
+    "regenerated": "2026-08-08",
+    "model": "use collaborator's exact crop coefficients; crop params removed from optimizer free set; pet_co refit (rule 11b)",
     "note": "Regression gate. A different SWAT+ build (e.g. a Linux/WSL ELF engine) must reproduce these numbers; a deviation is build disagreement, not a code bug. Regenerate with scripts/rebaseline.py."
   },
   "yields": [
@@ -12,59 +12,59 @@
       "year": 2013,
       "crop": "corn",
       "cuts": 1.0,
-      "yld_t": 21.4626007
+      "yld_t": 21.0905857
     },
     {
       "year": 2014,
       "crop": "barl",
       "cuts": 1.0,
-      "yld_t": 7.28560829
+      "yld_t": 9.12671089
     },
     {
       "year": 2015,
       "crop": "alfa",
       "cuts": 2.0,
-      "yld_t": 8.8247242
+      "yld_t": 13.2518177
     },
     {
       "year": 2016,
       "crop": "alfa",
       "cuts": 3.0,
-      "yld_t": 15.259922
+      "yld_t": 21.468214
     },
     {
       "year": 2017,
       "crop": "alfa",
       "cuts": 3.0,
-      "yld_t": 16.7434559
+      "yld_t": 24.6785736
     },
     {
       "year": 2018,
       "crop": "corn",
       "cuts": 1.0,
-      "yld_t": 20.420784
+      "yld_t": 20.2363968
     },
     {
       "year": 2019,
       "crop": "barl",
       "cuts": 1.0,
-      "yld_t": 6.6651063
+      "yld_t": 6.14602757
     }
   ],
   "water_mean": {
     "precip": 281.8311428571428,
-    "et": 836.1462857142858,
+    "et": 839.9312857142858,
     "pet": 1156.9458571428572,
-    "perc": 1.362857142857143,
+    "perc": 1.156,
     "irr": 562.6825714285714
   },
   "nstress_days": {
-    "2013": 7.8,
-    "2014": 0.0,
+    "2013": 7.765,
+    "2014": 1.981,
     "2015": 0.0,
     "2016": 0.0,
     "2017": 0.0,
-    "2018": 21.185,
-    "2019": 19.829
+    "2018": 20.822,
+    "2019": 35.539
   }
 }

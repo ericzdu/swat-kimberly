@@ -2,11 +2,30 @@
 
 ## Goal
 
-Calibrated SWAT+ field environment (Kimberly, ID) for management optimisation. The paper's
-contributions are the **environment** (first Gymnasium env on the official SWAT+ engine) and an
-**evaluation protocol that separates optimizer search from state-dependent adaptation**. The
-empirical question that protocol answers here: does a learned policy beat a matched-budget
-open-loop schedule, and does that standing change once nitrate is priced?
+Calibrated SWAT+ field environment (Kimberly, ID) for management optimisation.
+
+**Final goal:** determine whether a learned policy can maximise farm **profit** without paying for
+it in water and nitrate. Profit is the objective the reward maximises; **sustainability is the
+second objective**. The levers are taken in order — irrigation (Exp 1), fertiliser (Exp 2),
+rotation (Exp 3), then all three jointly (Exp 4).
+
+Revised 2026-08-10 (was "co-equal objectives"). What changed is the **framing only**: profit now
+leads the headline. What did **not** change is how the sustainability claim is settled — because no
+defensible market price exists for nitrate leaching in Idaho, it is settled by a **profit–leaching
+frontier**, never by a blended scalar. The deliverable is still the whole swept-λ_n curve, and the
+claim is still *dominance* — at matched profit, which strategy leaches less. Hard rule 1 below
+still enforces that; it is a constraint on method, not on framing.
+
+The paper's methodological contributions serve that goal: the **environment** (first Gymnasium env
+on the official SWAT+ engine) and an **evaluation protocol that separates optimizer search from
+state-dependent adaptation** — without which "the policy is greener" cannot be distinguished from
+"the policy was searched harder".
+
+**Two limits bound every sustainability claim and must appear wherever one is made:** leaching is
+unvalidated on site (rule 10), and SWAT+ cannot simulate N₂O at all — it is IPCC Tier 1 accounting,
+reported and never priced (rule 1). Optimising *for* an unvalidated channel is exactly the regime
+in which model error gets exploited invisibly; treating sustainability as a real second objective
+raises the stakes on that caveat rather than relieving them.
 
 ## Locked experimental design
 
@@ -21,10 +40,15 @@ open-loop schedule, and does that standing change once nitrate is priced?
 
 ## Hard rules
 
-1. Nitrate may **never** enter the reward at a single fixed price. It may enter only as a
-   **swept λ whose whole frontier is reported**, with the λ = 0 (profit-only) arm always
-   alongside. Publishing one interior point of that sweep as "the" answer is the failure this
-   rule exists to prevent. N₂O is IPCC Tier 1 accounting: **reported, never priced**.
+1. **Neither externality may enter the reward at a single fixed price.** Both water and nitrate
+   enter only as **swept λ whose whole frontier is reported**, with the market-price arm
+   (λ_w = scored water price, λ_n = 0) always alongside.
+   Publishing one interior point of a sweep as "the" answer is the failure this rule prevents.
+   N₂O is IPCC Tier 1 accounting: **reported, never priced** — it is R² = 1.000 linear in applied
+   N, so pricing it is a fertiliser surcharge, not a second objective. Prefer **dominance**
+   claims ("at matched profit, X uses less water"), which need no price at all.
+   λ_w and λ_n are **not independent** here: leaching responds to over-irrigation, not to
+   fertiliser. Say so rather than presenting two orthogonal axes.
 2. Match PPO and CMA budgets in **engine runs**, not native units — *and verify the two
    optimise the same objective*. Constraints here are enforced by **repair**, so a cap applied
    on one code path and not another changes what is simulated without changing what is priced,
@@ -56,6 +80,17 @@ open-loop schedule, and does that standing change once nitrate is priced?
     only (PROVENANCE §5h, `OPEN_ITEMS` #11).
 11. Where REF and a GRACEnet primary measurement disagree, **the measurement wins** — initial
     soil nitrate/labile P, bulk density, 2014/2019 irrigation (PROVENANCE §5g).
+11b. **Crop coefficients are the collaborator's workbook values and are NOT ours to fit.**
+    Decided 2026-08-07. `bm_e`, `harv_idx`, `lai_pot`, the canopy curve, `rt_dp_max` and the
+    temperature pair for corn/barl/alfa come from `Crop Parameters and Plant Harvest dates.xlsx`
+    exactly, and the `gn_*` harvest indices are its `HARV_EFF` (0.98 / 0.54 / 0.95). Do **not**
+    let `calibrate/optimize.py` move them back — exclude them from the free-parameter set, or
+    re-apply the workbook after any `--apply`. Rationale, measured: fitting bought only 2.3
+    points of mean |PBIAS| (37.1 % → 34.8 %) and paid for it by making every alfalfa year
+    14–17 points *worse*, which is rule 13's incentive showing up as a bad trade. The fitted
+    `corn.bm_e` = 64.5 also absorbed the resident-perennial artefact, so it hid a structural
+    error inside a parameter instead of leaving it visible. Book values keep the bias legible.
+    Domain ownership sits with the collaborator; we own the protocol, not the agronomy.
 12. **Parameter values calibrated in SWAT2012 do not transfer to rev 62.** `orgn_min = 0.001`
     was borrowed from a site sweep that hit the measured mineralisation rate to +4.7 % *in
     SWAT2012*; the same value here gives 54.4 kg N/ha/yr against 209.8 measured. Re-fit against
@@ -107,6 +142,8 @@ uv run python scripts/calibrate/optimize.py --maxiter 80          # report only
 uv run python scripts/calibrate/optimize.py --maxiter 80 --apply  # then rebaseline + gate
 
 uv run python scripts/percolation_check.py       # is the leaching column usable at all?
+uv run python scripts/paper_tables.py            # regenerates PAPER.md Tables 2-5 from runs/*.json
+uv run python scripts/exp1_strategy_table.py     # per-strategy profit/yield/water/leaching table
 
 # Stage 1 gate
 uv run python -m swat_gym.experiments.exp1_ceiling --budget 5000

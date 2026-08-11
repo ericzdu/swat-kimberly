@@ -1,4 +1,4 @@
-# A reinforcement-learning environment on official SWAT+, and a protocol for telling search from adaptation
+# Profit and nitrate together: a reinforcement-learning environment on official SWAT+, and a protocol for telling search from adaptation
 
 Eric Du *[co-authors and affiliations to confirm]*
 
@@ -20,11 +20,18 @@ specify an evaluation protocol whose purpose is to separate what an optimizer *s
 a policy *adapted* to: engine-run budgets matched across methods, verified objective parity between
 those methods, weather windows sharing no calendar years with training, a perfect-foresight
 reference, a parametric feedback controller as a third policy class, and plans frozen from a
-learned policy as a control on whether it conditions on state at all. Farm profit is the scored
-objective; applied water and nitrate leaching are reported beside it and enter the objective only
-as a swept price whose full frontier is published, never as a single shadow price.
-*[TODO: headline finding — the standing of the learned policy against matched-budget open-loop
-search, and whether pricing leaching changes that standing; from the corrected `runs/exp1_*.json`.]*
+learned policy as a control on whether it conditions on state at all. **The optimized objective is
+farm profit; sustainability is the second objective and is settled without pricing it.** Because no
+defensible market price for nitrate leaching exists in Idaho, we never fold it into a scalar at a
+fixed price: instead every strategy is re-scored across a swept nitrate price λ_n — exact
+arithmetic on stored cost terms, requiring no further simulation — and the **profit–leaching
+frontier** is reported whole, with the profit-only arm (λ_n = 0) always alongside. The
+sustainability claim this supports is *dominance at matched profit* — which strategy leaches less,
+and uses less water, for the same money — which needs no price at all. Applied water is reported
+with its breakeven price.
+*[TODO: headline finding — where each method's frontier lies, whether the learned policy dominates
+matched-budget open-loop search across λ_n or only within part of the range; from the corrected
+`runs/exp1_*.json`.]*
 Weather-specific scheduling is worth +836 ± 68 $ ha⁻¹ at this site, so a null result for
 closed-loop control cannot be attributed to there being nothing to adapt to. Calibration bounds
 what may be read from the ranking: signed, crop-specific yield bias makes within-crop levers more
@@ -32,8 +39,8 @@ interpretable than rotation, and while the model's percolation pathway responds 
 applied water, it is unvalidated on site, so leaching ranks strategies within the model and is not
 a field claim.
 
-**Keywords:** SWAT+; reinforcement learning; irrigation; nitrogen; evaluation protocol; CMA-ES;
-dairy-forage systems
+**Keywords:** SWAT+; reinforcement learning; irrigation; nitrogen; nitrate leaching; multi-objective
+optimization; sustainable intensification; evaluation protocol; CMA-ES; dairy-forage systems
 
 ---
 
@@ -72,9 +79,14 @@ report the resource consequences of every strategy alongside its profit.
    runs rather than native units, verified objective parity across methods, year-disjoint weather
    windows, a perfect-foresight reference, a parametric feedback controller as a third policy
    class, and train-selected frozen plans as a control on state-dependence.
-3. **A multi-objective formulation reported as a frontier.** Nitrate enters the objective only as a
-   swept price, with the profit-only arm always reported alongside, so no result depends on a
-   shadow price we would have to defend.
+3. **Profit as the optimized objective, sustainability as a second objective settled by a
+   frontier rather than a price.** Profit is what the reward maximizes and what the headline
+   reports. Nitrate and water are not annotations beneath it: each strategy is re-scored across a
+   swept λ_n and the whole profit–leaching frontier is published, with the profit-only arm always
+   alongside, so no sustainability conclusion depends on a shadow price we would have to defend.
+   Where a method's frontier lies wholly inside another's, that is a dominance result; where the
+   frontiers cross, we report the crossing rather than choosing the λ_n that favours our preferred
+   arm.
 4. **A calibration statement that treats per-crop bias, and an unvalidated percolation pathway, as
    bounds on interpretation** rather than as caveats appended to a conclusion.
 
@@ -156,7 +168,9 @@ The observation is 13-dimensional, `float32`. All channels describe months alrea
 | 12 | Year within rotation | `/ 7` |
 
 Divisors are order-of-magnitude scalings chosen to put channels near unit range, not statistical
-normalization from a data pass. Hydrologic state comes from `hru_wb_mon`, stress from `hru_pw_mon`.
+normalization from a data pass — and that turned out to be insufficient on its own, which §3.7
+treats as a finding rather than an implementation note. Hydrologic state comes from `hru_wb_mon`,
+stress from `hru_pw_mon`.
 
 **No future weather is observable.** The policy is a nowcast, not a forecast. This is deliberate
 and it is what makes the perfect-foresight reference in §4 a meaningful contrast rather than a
@@ -176,40 +190,92 @@ feasible plan before simulation. This keeps the reward interpretable as money, b
 that §4 makes into a protocol requirement: repair silently changes what was requested, so a repair
 applied on one code path and not another changes the objective invisibly.
 
+Repair is therefore applied *asymmetrically by design*, and the asymmetry is stated rather than
+inherited. Rotation feasibility is repaired over the whole plan, since it is a property of the
+sequence. A nitrogen cap is **not**: rewriting the whole plan each step would let month t revise
+months already simulated and reported to the agent, so the cap instead enters as observation
+channel 10 (remaining annual allowance) and clips only the current month's application. The agent
+sees the constraint and acts inside it; the past is never rewritten. In the irrigation experiment
+the cap is disabled on every arm (`max_n = None`), and the experiment-level scorers give it **no
+default value** — it must be passed explicitly — because a silent default once applied a
+400 kg N ha⁻¹ cap to the open-loop objective while the policy ran uncapped, which inverted the
+sign of the headline comparison.
+
 ### 3.4 Reward
 
-The scored quantity is rotation-total profit, in $ ha⁻¹ over the seven scored years:
+**The full reward function, in one place.** The scored quantity is rotation-total profit, in
+$ ha⁻¹ over the seven scored years:
 
-  Π = Σ_c Y_c · p_c − mm_irr · p_w − Mg_manure · p_m − kg_N · p_N − n_events · p_op
+  Π(λ_n) = Σ_c Y_c · p_c − mm_irr · p_w − Mg_manure · p_m − kg_N · p_N − n_events · p_op − λ_n · NO₃
 
-with yields Y_c from `basin_crop_yld_yr` and applied water from `hru_wb_yr`. Per step,
+Every term is read from a completed engine run rather than assumed:
+
+| Term | Symbol | Source | Price (§3.6) |
+|---|---|---|---|
+| Crop revenue | Σ_c Y_c · p_c | `basin_crop_yld_yr`, Mg DM by plant name | $/Mg DM, NASS 2022–24 mean |
+| Irrigation | mm_irr · p_w | `hru_wb_yr.irr` | $0.41 mm⁻¹ ha⁻¹ *(placeholder)* |
+| Manure | Mg_manure · p_m | `management.sch` fert ops, manure products | $5.00 Mg⁻¹ *(representative)* |
+| Mineral N | kg_N · p_N | same, non-manure products, × `fertilizer.frt` N fraction | $1.54 kg⁻¹ N |
+| Application passes | n_events · p_op | count of fert operations | $5.00 ha⁻¹ event⁻¹ |
+| Nitrate leaching | λ_n · NO₃ | `basin_aqu_yr.no3_rchg` | **swept, λ_n = 0 by default** |
+
+Three details matter for reproducing the number. Manure is charged by **mass**, not by nitrogen
+content, because dairy manure here is a disposal stream whose real cost is haul-and-spread; its N
+content enters only the emissions accounting (§3.8). Passes are charged per operation for either
+source, because without a per-event charge splitting nitrogen is free and "how many passes are
+worth it" has no answer. And λ_n defaults to **zero**: leaching is always *reported* as
+`no3_leached_kg`, and enters Π only when a sweep sets a price (§3.5). N₂O never enters Π at all.
+
+Per step,
 
   r_t = (Π_t − Π_{t−1}) × 10⁻³
 
 where Π_t is the profit of the whole rotation re-simulated with operations decided through step t.
 Two properties follow. The sum telescopes and γ = 1, so **the episode return is exactly 10⁻³ × total
-rotation profit** — the decomposition is a credit-assignment device, not a change of objective. And
-a step's reward is not that month's profit but the whole-rotation change caused by that month's
-water, which is non-local: April water can move September yield. The 10⁻³ scale exists because
-unscaled $ ha⁻¹ returns put the value target near 10⁷.
+rotation profit** — the decomposition is a credit-assignment device, not a change of objective, and
+it is what lets PPO and CMA-ES be checked for optimizing the same quantity (§4). And a step's reward
+is not that month's profit but the whole-rotation change caused by that month's water, which is
+non-local: April water can move September yield. This is the direct consequence of SWAT+ having no
+checkpoint-restart, and it is why credit assignment here is harder than the 42-step horizon
+suggests. The 10⁻³ scale exists because unscaled $ ha⁻¹ returns put the value target near 10⁷.
 
 ### 3.5 Multi-objective formulation
 
-Resource use enters through a priced family rather than a single objective:
+**Profit is the objective the policy maximizes; sustainability is the second objective, and it is
+settled by a frontier rather than by a price.** The distinction is operational, not rhetorical: a
+sustainability claim that depends on a number we cannot source is not a claim. Because neither
+externality has a defensible market price at this site, both enter as *swept* prices rather than
+as fixed costs inside the headline objective:
 
-  Π(λ_n) = Π − λ_n · NO₃
+  Π(λ_w, λ_n) = Π₀ − λ_w · mm_irr − λ_n · NO₃
 
-evaluated over a grid of λ_n, with the profit-only arm λ_n = 0 always reported. We report the
-resulting frontier rather than selecting a λ_n, so no conclusion rests on a nitrate shadow price we
-would have to defend. Where a claim is needed it is stated as dominance — *at matched profit,
-strategy X leaches Y % less* — which requires no price at all. Grid points are anchored on
-breakevens computed from the results rather than chosen a priori (§6.3).
+where Π₀ is revenue net of the agronomic input costs. The grid is evaluated with the
+market-price arm (λ_w at the scored water price, λ_n = 0) always reported alongside, and we
+publish the whole curve rather than selecting a point, so no conclusion rests on a shadow price
+we would have to defend.
 
-**Why nitrate rather than water carries the price.** Applied water is already a priced term in Π, and
-it is tempting to assume that pricing water controls leaching. It does not: strategies at
-*identical* applied water differ several-fold in leaching, because leaching is driven by the timing
-of application relative to soil-water state, not by seasonal volume. Water is therefore reported
-with its breakeven price, and nitrate gets the swept axis.
+**Why both axes are swept, and why water is the sharper one.** The farmer's water price is
+precisely what *fails* to reflect aquifer scarcity — which is why depletion is a problem in the
+Eastern Snake Plain at all — so treating it as a fixed cost would build the sustainability
+question out of the model. Applied water is measured, gate-verified against practice to within
+0.01 %, and strongly responsive to management; it is the strongest sustainability axis available
+here.
+
+**The two axes are not independent, and we say so rather than presenting them as orthogonal.**
+In this model leaching is driven by over-irrigation, not by fertilization: holding irrigation at
+the measured rate, nitrogen dose produces zero leaching at every rate tested up to 4,490 kg N ha⁻¹,
+while raising applied water by 20 % produces 32 kg N ha⁻¹. Both prices therefore act through the
+same lever, and a two-dimensional grid shows correlated rather than independent movement.
+
+**Claims are stated as dominance wherever possible** — *at matched profit, strategy X uses Y % less
+water* — because a dominance claim requires no price at all and survives a reader's disagreement
+about what water or nitrate is worth.
+
+**Re-scoring is exact; re-optimizing is not.** Profit is linear in every price and the cost terms
+are stored separably, so a schedule's profit at any price vector is arithmetic on stored rows with
+no further simulation. That answers *how would this schedule fare if water were dearer*. It does
+not answer *what schedule would you choose if it were* — that requires re-running the search, and
+the two are reported separately rather than conflated.
 
 **What "leaching" means here.** NO₃ is `no3_rchg` summed over the scored years — nitrate reaching
 the aquifer in recharge. It excludes surface, lateral and tile pathways. This is the quantity of
@@ -234,7 +300,44 @@ advantage vanishes is exact arithmetic on stored rows with no further simulation
 breakevens wherever a placeholder price is load-bearing, which converts a result that depends on an
 unsourced number into a statement of the form *this holds for any price below X*.
 
-### 3.7 Emissions accounting
+### 3.7 Learning algorithm, and why it is configured this way
+
+The policy is PPO (`MlpPolicy`, Stable-Baselines3) over the continuous action box, trained on four
+`SubprocVecEnv` workers — parallelism is across CPU cores because SWAT+ is CPU-bound and the
+engine, not the network, is the cost. Three configuration choices are not defaults and are
+load-bearing enough to belong in the method rather than in a config file.
+
+**γ = 1, and rollout lengths keyed to the episode.** The objective is total rotation profit over a
+fixed 42-step horizon, so discounting would optimize something else. `n_steps` is 4 episodes (168)
+and `batch_size` 2 episodes (84): both are set *by formula from the episode length* rather than
+tuned. This is deliberate and §4 relies on it — hyperparameters that were searched would need a
+validation split the weather record cannot support.
+
+**Observations are statistically normalized, and the statistics travel with the policy.** With the
+order-of-magnitude divisors of §3.2 alone, PPO learns an *exactly constant* schedule: the standard
+deviation of applied depth across held-out weather windows is **0.000 mm**. Several channels sit
+near zero in practice — nitrogen and water stress divided by 50 when stress runs 0–5 — and a
+network fed them learns to ignore them, which is a failure of input scaling masquerading as a
+finding about adaptivity. Running observations through a `VecNormalize` filter (clip 10) raises
+that standard deviation to **6.4 mm**, raises return by **1,320 $ ha⁻¹**, and *cuts* applied water
+from 6,116 to 5,352 mm. We report this because a paper whose question is "does the policy condition
+on state" can be answered negatively by this bug alone, and the negative result would look
+substantive. The filter's mean and variance are saved beside the policy weights and are a
+**required** argument to every scorer: a policy trained on normalized observations and scored on
+raw ones is not a degraded policy but a different objective — the same class of silent divergence
+as the nitrogen-cap mismatch in §3.3, and the reason §4 makes objective parity a tested property.
+
+**Initial exploration scale.** `log_std_init = −2.0` (σ ≈ 0.14 on the unit action box), against the
+SB3 default of 0. At σ ≈ 0.37 the policy applied 6,116 mm against a measured 3,939 and saturated
+10 % of its actions at the box boundary; at σ ≈ 0.14 it applied 4,533 mm, earned more, and saturated
+2 %. A wide initial Gaussian on a bounded action that is *already* generous — 200 mm in a single
+month — spends the budget in a region no manager would irrigate in.
+
+Both the observation filter and the exploration scale are hashed into the key that identifies a
+saved policy, alongside the price vector, the nitrate price, the cap and the pinned baseline plan,
+so a checkpoint cannot silently resume into a run asking a different question.
+
+### 3.8 Emissions accounting
 
 Nitrous oxide is computed by IPCC (2019 Refinement) Tier 1 accounting from quantities the
 simulation already produces — direct `EF1 × N_applied`, indirect `EF5 × NO₃` from leaching, and
@@ -466,10 +569,12 @@ open-loop search vanishes, and the price at which its advantage over measured pr
 Report both, the full frontier, and the cross-scoring matrix in which every strategy optimized at
 one price is re-scored at every other — exact arithmetic requiring no further simulation.]*
 
-The question the frontier answers is not whether a learned policy earns more, but whether it
-reaches lower leaching at matched profit than a schedule searched to the same budget — that is,
-whether closed-loop control pays once the objective becomes timing-sensitive rather than
-volume-sensitive.
+The frontier answers the second question, once §6.2 has answered the first. Given a strategy that
+earns more, does it also reach lower leaching at matched profit than a schedule searched to the
+same budget — that is, does closed-loop control still pay once the objective becomes
+timing-sensitive rather than volume-sensitive? A profit gain bought with more water and more
+nitrate is not an improvement, and the frontier is what makes that visible without our having to
+price either.
 
 ### 6.4 Adaptation and its baseline
 
@@ -505,16 +610,30 @@ can carry field meaning. Validate winning schedules in an independent simulator.
 
 ## 8. Conclusion
 
-We present a Gymnasium environment driven by official SWAT+ on a measured Kimberly field — to our
-knowledge the first such stack — and a protocol whose purpose is to make a comparison between a
-learned policy and a searched schedule mean what it appears to mean. The protocol's requirements
-are unglamorous: match budgets in engine runs, verify that competing methods optimize the same
-objective rather than assuming it, keep training and evaluation weather disjoint, report
-uncertainty that accounts for overlapping windows, and treat a policy's own frozen schedule as a
-control on state-dependence rather than as a measure of adaptation. *[TODO: state the empirical
-finding once the corrected runs land.]* Calibration bounds what may be read from any ranking:
-within-crop levers are safer than rotation under signed yield bias, and leaching ranks strategies
-within the model rather than measuring what the field loses.
+We set out to ask whether a learned policy can raise farm profit without paying for it in water and
+nitrate, and we have built the two things that question needs before it can be answered honestly: a
+Gymnasium environment driven by official SWAT+ on a measured Kimberly field — to our knowledge the
+first such stack — and a protocol that makes a comparison between a learned policy and a searched
+schedule mean what it appears to mean. The protocol's requirements are unglamorous: match budgets
+in engine runs, verify that competing methods optimize the same objective rather than assuming it,
+keep training and evaluation weather disjoint, report uncertainty that accounts for overlapping
+windows, and treat a policy's own frozen schedule as a control on state-dependence rather than as a
+measure of adaptation. Without them, "the policy is greener" cannot be told apart from "the policy
+was searched harder."
+
+Profit is what the reward maximizes; sustainability is the second objective, and refusing to price
+it is what makes the frontier rather than a scalar the deliverable. We report where each method's
+curve lies and where curves cross, never an optimum at a chosen λ_n, so a reader who disagrees with
+us about what nitrate is worth can still read the result.
+*[TODO: state the empirical finding once the corrected runs land.]*
+
+Two limits bound how far any of this reaches beyond the model, and both grow rather than shrink the
+moment sustainability is treated as a real objective. Leaching ranks strategies within the model
+and does not measure what the field loses; optimizing *for* an unvalidated channel is precisely the
+regime in which model error is exploited without becoming visible. And N₂O is not simulated by
+SWAT+ at all — what we report is IPCC Tier 1 accounting over simulated nitrogen flows, never
+priced. A greener policy in these results is a greener policy *in this model*, which is a claim
+worth making only because the protocol makes it checkable.
 
 ---
 

@@ -1,11 +1,23 @@
 # swat-kimberly
 
 **A SWAT+ field model being calibrated into a reinforcement-learning environment for
-irrigation and nutrient management.**
+irrigation and nutrient management, to ask whether a learned policy can raise farm profit
+without paying for it in water and nitrate.**
+
+**Profit is the objective the reward maximises; sustainability is the second objective.** It is
+not a caveat, though — because there is no defensible market price for nitrate leaching in
+Idaho, it is settled by a **profit–leaching frontier** rather than by a price: nitrate enters
+the objective only as a swept λ_n whose whole curve is reported, with the λ_n = 0 profit-only
+arm always alongside. The result is a dominance claim — at matched profit, which strategy
+leaches less — rather than an optimum at a shadow price nobody could defend.
 
 The deliverables are the **environment**, the **evaluation protocol** that makes a comparison
 between a learned policy and a searched schedule mean what it appears to mean, and the
 **profit–leaching frontier** they produce (`EXPERIMENTS.md`, `PAPER.md`).
+
+Two limits bound every sustainability claim here and are stated wherever one is made: leaching
+is unvalidated on site, and N₂O cannot be simulated by SWAT+ at all — it is IPCC Tier 1
+accounting, reported and never priced.
 
 Calibration is stage one of that, not a separate project: a policy optimized inside a biased
 simulator inherits the bias, and its recommendations are artefacts of the model rather than
@@ -169,10 +181,13 @@ matches. PET is exactly linear in `pet_co`, so the fit is closed-form.
 | `no3_rchg` | 1.12 kg/ha/yr | **0.02** | 0.01 |
 | yield vs GRACEnet | −6.7 % | **−9.8 %** | −11.6 % |
 
-The percolation column is the honest cost, and it is not a `pet_co` problem: `perco` is inert
-across its full range, and `esco`/`epco`/the soil profile already match the reference exactly.
-The model's ET/PET ratio (~0.86) differs from the reference's (~0.51) because the engines
-differ, not because the inputs do. See PROVENANCE §5h and `OPEN_ITEMS.md` #11.
+The percolation row is the honest cost of fitting PET to measurement, and it is read at
+*measured practice only* — a single point near crop demand, which is where the threshold keeps
+drainage near zero. It is not evidence that the channel is dead: raise applied water and both
+percolation and nitrate respond (see the water paragraph below, and `scripts/percolation_check.py`).
+`esco`/`epco`/the soil profile already match the reference exactly, so the ET/PET difference
+against REF (~0.86 vs ~0.51) is an engine difference, not an input error. PROVENANCE §5h,
+`OPEN_ITEMS.md` #11.
 
 ```bash
 uv run python scripts/calibrate_petco.py           # sweep + solve, writes nothing
@@ -311,19 +326,23 @@ optimize to their bounds". That argument was weaker than it read: at least one o
 for this rotation — so it was a dead dimension parked at a bound, not a binding constraint
 (PROVENANCE §5j).
 
-Water, 2013–2019 mean: ET 836, PET 1157, deep perc 1.4, irrig 563 mm/yr.
+Water, 2013–2019 mean: ET 836, PET 1157, irrig 563 mm/yr.
 
-**Deep percolation has collapsed, and it is not a knob any more.** Under rev 60.5.7 this was a
-live trade-off — `alfa.lai_min` bought drainage against yield, which is why it shipped at 1.75.
-Under rev 62 that trade is gone: percolation is **1.4 mm/yr** against the reference model's 72,
-`basin_aqu_yr.no3_rchg` is ~0.02 kg/ha/yr, and `perco` is inert across its full range. `esco`,
-`epco` and the soil profile all match REF exactly, so this is an **engine difference**, not an
-input error (PROVENANCE §5h). `alfa.lai_min` is now fitted at 1.01 purely on yield, because
-there is no longer any drainage to trade against.
+**Percolation is threshold-behaved in applied water, not collapsed.** Re-measured 2026-08-06
+(`scripts/percolation_check.py`): below crop demand nothing drains; above it, drainage and
+nitrate rise together — 9 → 162 mm/yr as applied water goes 3,939 → 5,778 mm, at a physically
+plausible **13.6–26.5 mg/L**, above the 10 mg/L drinking-water standard that motivates the
+paper. An earlier reading of this section reported a "drainage collapse" and an inert `perco`
+from a single point at measured practice; that is superseded (CLAUDE.md rule 10, OPEN_ITEMS
+#11). There is nothing here to rescue.
 
-**The leaching column the Exp 1 reward reads is therefore effectively zero.** That is
-`OPEN_ITEMS.md` #11, and the measured soil-nitrate trajectory added since (PROVENANCE §5i)
-confirms it cannot be rescued by refitting the nitrogen cycle.
+**So the leaching column is usable, with two limits that bound every sustainability claim.**
+It ranks strategies *within the model* and can carry the λ_n frontier. But it is **not
+validated against measurement** at this site, so magnitudes are not field claims; and at
+measured practice the signal is **sparse across windows** — 2.40 kg/ha/yr in the 2013-start
+window and ~0 in the other four — so leaching differences carry high between-window variance.
+Both limits are load-bearing precisely because sustainability is a real objective here and not
+a footnote: optimizing *for* a channel is the regime in which an unvalidated one gets exploited.
 
 **PET is scored against measurement, not against the reference model.** The AgriMet TWFI
 station records grass-reference ET; after `pet_co` was calibrated to it, SWAT+ PET is **+0.0 %**

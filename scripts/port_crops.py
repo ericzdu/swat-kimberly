@@ -109,9 +109,12 @@ OVERRIDES: dict[tuple[str, str], tuple[float, str]] = {
     # was fitted inside SWAT2012. Applied in SWAT+ it delays canopy closure to about jday 210
     # for corn planted 17 May, costing ~15 PBIAS points. Curve *shape* is engine-specific in a
     # way BIO_E is not, so the same workbook's DEFAULT values are the better prior here.
-    ("corn", "frac_hu1"): (0.15, "workbook DEFAULT block (calibrated 0.10 is SWAT2012-fitted)"),
-    ("corn", "lai_max1"): (0.05, "workbook DEFAULT block (calibrated 0.01 is SWAT2012-fitted)"),
-    ("corn", "frac_hu2"): (0.50, "workbook DEFAULT block (calibrated 0.80 is SWAT2012-fitted)"),
+    # REMOVED 2026-08-07 (CLAUDE.md rule 11b): corn's frac_hu1 0.15 / lai_max1 0.05 /
+    # frac_hu2 0.50, taken from the workbook's DEFAULT block on the argument that his
+    # calibrated 0.10 / 0.01 / 0.80 was SWAT2012-fitted and cost ~15 PBIAS points here. That
+    # is a real rev-62 concern (rule 12) but it is *his* curve to change, not ours, and the
+    # cost is already included in the 37.1 % mean |PBIAS| measured on his exact values.
+    # Raise it with him rather than substituting a different block of his own workbook.
 
     # -- fits, not source values ---------------------------------------------------------
     # plant.ini declares a three-plant community, so alfalfa's minimum LAI is imposed on the
@@ -139,10 +142,9 @@ OVERRIDES: dict[tuple[str, str], tuple[float, str]] = {
     # ETos and to be treating a symptom; ``pet_co`` is now calibrated to 0.964 and the drainage
     # collapse is an open engine-difference finding — PROVENANCE §5h, OPEN_ITEMS #11.
     ("alfa", "lai_min"): (1.75, "FIT: trades resident-perennial PAR theft against drainage"),
-    # Alfalfa is the one crop with a near-orthogonal lever (Morris mu* 112 on alfalfa, <1 on
-    # the others). 10.0 is below both the calibrated 17.0 and the DEFAULT 20.0 -- it is
-    # absorbing the over-prediction, not measuring radiation-use efficiency.
-    ("alfa", "bm_e"): (10.0, "FIT: brings alfalfa from +71.6 % to +0.5 % vs measured"),
+    # REMOVED 2026-08-07 (CLAUDE.md rule 11b): ("alfa", "bm_e") -> 10.0. Its own rationale
+    # said the quiet part out loud -- "it is absorbing the over-prediction, not measuring
+    # radiation-use efficiency" -- which is exactly why it goes. The workbook's 17.0 stands.
 }
 
 

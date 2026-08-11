@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from ..env import DEFAULT_PLAN
+from ..obsnorm import ObsNorm, apply as apply_obsnorm
 from ..fastrunner import FastRunner
 from ..monthly import (default_monthly_i_free, evaluate_monthly_i)
 from ..monthly_env import EPISODE_STEPS, MonthlySwatEnv
@@ -33,6 +34,18 @@ from ._focused import (ROOT, _cfg_key, _load_stage, _row, _save_stage, _stage,
 from ._optimize import minimise
 
 OUT = ROOT / "runs" / "exp1_irrigation.json"
+
+#: Normalise observations before PPO sees them. Without this the policy learns an **exactly
+#: constant** schedule: measured 2026-08-07, std of applied depth across held-out windows is
+#: 0.000 mm raw vs 6.4 mm normalised, with return +1,320 $/ha and water 6,116 -> 5,352 mm.
+#: The 13 channels carry order-of-magnitude divisors, not statistics, and several sit near zero.
+NORMALISE_OBS = True
+CLIP_OBS = 10.0
+
+#: sigma ~ 0.14 on the unit action box. At the previous -1.0 (sigma ~ 0.37) the policy applied
+#: 6,116 mm against a measured 3,939; at -2.0 it applied 4,533 mm, earned more, and saturated
+#: 2 % of actions against 10 %.
+LOG_STD_INIT = -2.0
 
 
 def score_monthly(x, windows, prices, no3_price, max_n):
@@ -48,7 +61,13 @@ def score_monthly(x, windows, prices, no3_price, max_n):
                 for sy in windows]
 
 
-def score_policy_monthly(model, windows, prices, no3_price, max_n):
+def score_policy_monthly(model, windows, prices, no3_price, max_n, obsnorm):
+    """Roll out the deterministic policy on each window.
+
+    ``obsnorm`` is **required**: a policy trained on normalised observations scored on raw ones
+    is not a degraded policy, it is a different objective. Pass ``None`` only to state that this
+    policy was trained on raw observations.
+    """
     rows, plans = [], {}
     with MonthlySwatEnv(stochastic_weather=False, prices=prices, no3_price=no3_price,
                         arm="I", max_n=max_n) as env:
@@ -56,9 +75,11 @@ def score_policy_monthly(model, windows, prices, no3_price, max_n):
             obs, _ = env.reset(start_year=sy)
             done = False
             while not done:
-                action, _ = model.predict(obs, deterministic=True)
+                action, _ = model.predict(apply_obsnorm(obsnorm, obs), deterministic=True)
                 obs, _, done, _, info = env.step(action)
-            rows.append(_row(info, sy))
+            y = env.runner.yields()
+            rows.append(_row(info, sy,
+                             yield_mg=float(y["yld(t)"].sum()) if len(y) else 0.0))
             plans[sy] = env.month_mm.copy()
     return rows, plans
 
@@ -72,13 +93,16 @@ def score_month_plan(month_mm, windows, prices, no3_price, max_n):
 def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
     from stable_baselines3 import PPO
     from stable_baselines3.common.callbacks import CheckpointCallback
-    from stable_baselines3.common.vec_env import SubprocVecEnv
+    from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
     from ._progress import ppo_callbacks, ppo_progress_bar
 
     scfg = {**cfg, "ppo_seed": seed}
     tag = f"ppo_s{seed}"
     ppo_path = args.out.with_name(f"{args.out.stem}_{tag}.zip")
+    # The observation filter is part of the policy: scored raw, a normalised policy is solving a
+    # different problem. Kept beside the weights and reloaded with them.
+    norm_path = args.out.with_name(f"{args.out.stem}_{tag}_obsnorm.npz")
     # Config-keyed, as in _focused.py: the λ sweep trains one policy per nitrate price, and an
     # unkeyed directory would let a λ=0 checkpoint resume into a λ=40 run.
     ckpt_dir = args.out.parent / f"{args.out.stem}_{tag}_ckpt_{_cfg_key(scfg)}"
@@ -91,11 +115,20 @@ def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
         return _f
 
     venv = SubprocVecEnv([make(i) for i in range(args.n_envs)])
+    if NORMALISE_OBS:
+        venv = VecNormalize(venv, norm_obs=True, norm_reward=False, clip_obs=CLIP_OBS)
     try:
         if ppo_path.is_file() and _load_stage(args.out, tag, scfg) is not None:
             model = PPO.load(str(ppo_path), env=venv)
             print(f"  seed {seed}: already trained to {model.num_timesteps} steps", flush=True)
-            return model
+            if not NORMALISE_OBS:
+                return model, None
+            if not norm_path.is_file():
+                raise FileNotFoundError(
+                    f"{ppo_path.name} was trained with observation normalisation but "
+                    f"{norm_path.name} is missing. Scoring it on raw observations would be a "
+                    "different objective — refusing. Delete the policy and retrain.")
+            return model, ObsNorm.load(norm_path)
         resume = sorted(ckpt_dir.glob("*.zip"), key=lambda q: q.stat().st_mtime)
         if resume:
             model = PPO.load(str(resume[-1]), env=venv)
@@ -106,7 +139,7 @@ def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
                   f"(episode={EPISODE_STEPS})", flush=True)
             model = PPO("MlpPolicy", venv, seed=seed, verbose=0,
                         n_steps=EPISODE_STEPS * 4, batch_size=EPISODE_STEPS * 2,
-                        gamma=1.0, policy_kwargs={"log_std_init": -1.0})
+                        gamma=1.0, policy_kwargs={"log_std_init": LOG_STD_INIT})
         remaining = args.budget - int(model.num_timesteps)
         if remaining > 0:
             ckpt = CheckpointCallback(save_freq=max(1, args.budget // 20),
@@ -115,8 +148,11 @@ def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
                         callback=ppo_callbacks(ckpt),
                         progress_bar=ppo_progress_bar())
         model.save(str(ppo_path.with_suffix("")))
+        obsnorm = ObsNorm.from_vecnormalize(venv) if NORMALISE_OBS else None
+        if obsnorm is not None:
+            obsnorm.save(norm_path)
         _save_stage(args.out, tag, scfg, {"num_timesteps": int(model.num_timesteps)})
-        return model
+        return model, obsnorm
     finally:
         venv.close()
 
@@ -155,6 +191,9 @@ def main(argv=None) -> dict:
     cfg = {"arm": "I_monthly", "budget": args.budget, "seed": args.seed,
            "prices": prices.label, "train": train, "test": test,
            "no3_price": args.no3_price, "max_n": max_n,
+           # The observation filter and exploration scale change what is learned, so they key
+           # the artefacts too — a raw-observation policy must not resume into a normalised run.
+           "normalise_obs": NORMALISE_OBS, "log_std_init": LOG_STD_INIT,
            "default_plan": _cfg_key({"p": DEFAULT_PLAN.round(6).tolist()})}
 
     print(f"Exp1 irrigation monthly  budget={args.budget}  "
@@ -260,10 +299,11 @@ def main(argv=None) -> dict:
         seeds = [args.seed + 100 * i for i in range(max(1, args.ppo_seeds))]
         per_seed = {}
         for s in seeds:
-            model = train_monthly_ppo(args, cfg, prices, max_n, s)
-            p_test, p_plans = score_policy_monthly(model, test, prices, args.no3_price, max_n)
+            model, obsnorm = train_monthly_ppo(args, cfg, prices, max_n, s)
+            p_test, p_plans = score_policy_monthly(model, test, prices, args.no3_price,
+                                                   max_n, obsnorm)
             p_train, p_plans_tr = score_policy_monthly(model, train, prices,
-                                                      args.no3_price, max_n)
+                                                       args.no3_price, max_n, obsnorm)
             fz_tr = {sy: score_month_plan(mm, train, prices, args.no3_price, max_n)
                      for sy, mm in p_plans_tr.items()}
             bf = max(fz_tr, key=lambda sy: mean(fz_tr[sy]))
