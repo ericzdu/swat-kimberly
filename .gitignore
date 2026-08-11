@@ -16,3 +16,7 @@ __pycache__/
 # (deleted 2026-08-07) and are cited in rewarders.py / env.py. Keep them tracked.
 !runs/exp1b_price_ratio.json
 !runs/exp1c_cadence_e500.json
+
+PAPER.md
+handoff.md
+CLAUDE.md
