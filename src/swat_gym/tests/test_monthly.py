@@ -237,3 +237,103 @@ def test_event_splitting_preserves_applied_depth():
     measured = 3938.8
     err = abs(d["irrigation_mm"] - measured) / measured
     assert err < 0.01, f"{d['irrigation_mm']} vs {measured} ({err:.2%}) — splitting lost water"
+
+
+# -- the observation actually closes the loop ---------------------------------------------
+#
+# Every step re-runs all eight years, so the monthly tables always END at December of the
+# final year. ``_read_state`` used to take ``iloc[-1]``, which returned that same future row
+# at every step: channels 5-9 were frozen at (sw=16.609, precip=9.144, pet=16.414) for the
+# whole episode, and the only inputs that moved were deterministic functions of ``t``. The
+# policy was structurally open-loop, so "PPO ~= frozen plan" was guaranteed by the wiring
+# rather than measured — which is the paper's central claim. The three tests below pin the
+# row selection, the variation it produces, and the causality premise §3.1.1 rests on.
+
+def _decided_month(step_count: int, start_year: int = 2013) -> tuple[int, int]:
+    """(calendar year, month) the ``step_count``-th step decided. ``nyskip`` drops spin-up."""
+    t = step_count - 1
+    return start_year + SPINUP + t // len(GROWING_MONTHS), GROWING_MONTHS[t % len(GROWING_MONTHS)]
+
+
+def test_observation_reads_the_decided_month_not_the_last_row():
+    """Each channel must come from the month just decided, selected by (yr, mon)."""
+    from swat_gym.monthly_env import MonthlySwatEnv
+
+    # Collect inside the try, assert outside it: a bare ``except Exception`` around the
+    # assertions would turn a genuine failure of this test into a skip.
+    seen = []
+    try:
+        with MonthlySwatEnv(stochastic_weather=False, arm="I", max_n=None) as env:
+            env.reset(start_year=2013)
+            for k in (1, 2, 3, 7):  # includes a year rollover (step 7 = April, year 2)
+                while env.t < k:
+                    env.step([0.5])
+                yr, mon = _decided_month(k)
+                wb = env.runner.read("hru_wb_mon.txt")
+                pw = env.runner.read("hru_pw_mon.txt")
+                seen.append((
+                    k, yr, mon, dict(env.last),
+                    wb[(wb["yr"] == yr) & (wb["mon"] == mon)].iloc[0],
+                    pw[(pw["yr"] == yr) & (pw["mon"] == mon)].iloc[0],
+                    (int(wb.iloc[-1]["mon"]), int(wb.iloc[-1]["yr"])),
+                ))
+    except Exception as e:  # pragma: no cover - engine may be unavailable
+        pytest.skip(f"engine unavailable: {e}")
+
+    for k, yr, mon, last, w, p, final_row in seen:
+        assert last["sw"] == pytest.approx(float(w["sw_final"])), (
+            f"step {k}: soil water is not {yr}-{mon:02d}'s — the observation has "
+            "drifted off the decided month again"
+        )
+        assert last["precip"] == pytest.approx(float(w["precip"]))
+        assert last["pet"] == pytest.approx(float(w["pet"]))
+        assert last["strsw"] == pytest.approx(float(p["strsw"]))
+        assert last["strsn"] == pytest.approx(float(p["strsn"]))
+        # The bug's signature: the table's final row is always a *future* December.
+        assert final_row == (12, 2020)
+
+
+def test_hydrologic_channels_vary_within_an_episode():
+    """If sw/precip/PET are constant, the policy has nothing to condition on but the clock."""
+    from swat_gym.monthly_env import MonthlySwatEnv
+
+    try:
+        with MonthlySwatEnv(stochastic_weather=False, arm="I", max_n=None) as env:
+            obs = [env.reset(start_year=2013)[0]]
+            for _ in range(6):
+                obs.append(env.step([0.5])[0])
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"engine unavailable: {e}")
+
+    seen = np.array(obs)[1:]  # channel values are only meaningful after a run
+    for ch, name in ((5, "soil water"), (8, "precip"), (9, "PET")):
+        assert seen[:, ch].std() > 0, (
+            f"observation channel {ch} ({name}) is constant across the episode — the "
+            "environment is open-loop and no adaptation result from it is meaningful"
+        )
+
+
+def test_undecided_tail_cannot_change_earlier_observations():
+    """The premise §3.1.1's equivalence argument rests on: SWAT+ is causal in simulated time.
+
+    Prefix replay is only the *same* MDP if months after ``t`` cannot influence the row read
+    at ``t``. Seed the tail of the plan with a large irrigation the agent has not chosen yet;
+    every observation up to the decision point must be bit-identical to the unseeded run.
+    """
+    from swat_gym.monthly_env import MonthlySwatEnv
+
+    try:
+        runs = []
+        for tail_mm in (0.0, 200.0):
+            with MonthlySwatEnv(stochastic_weather=False, arm="I", max_n=None) as env:
+                env.reset(start_year=2013)
+                env.month_mm[4:, :] = tail_mm  # years 5-7: far past the steps we take
+                runs.append([env.step([0.5])[0] for _ in range(3)])
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"engine unavailable: {e}")
+
+    for k, (a, b) in enumerate(zip(*runs)):
+        np.testing.assert_array_equal(
+            a, b, err_msg=f"step {k}: a future month changed a past observation; the "
+                          "prefix-replay construction is not the MDP the paper claims"
+        )

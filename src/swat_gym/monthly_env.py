@@ -171,6 +171,22 @@ class MonthlySwatEnv:
         terminated = self.t >= EPISODE_STEPS
         return self._obs(), reward, terminated, False, {"cum_profit": self.cum_profit, **d}
 
+    def _decided_row(self, df):
+        """The monthly row for the month just decided — not the last row of the table.
+
+        Every step re-runs the *whole* rotation, so the table always ends at December of the
+        final simulated year. Taking ``iloc[-1]`` therefore returns the same future month at
+        every step, which both leaks past the decision point and leaves the hydrologic
+        channels constant within an episode. Select by (year, month) instead: ``nyskip``
+        discards the spin-up year, so printed year ``y`` is ``start_year + SPINUP + y``.
+        """
+        if df is None or not len(df) or "yr" not in df.columns or "mon" not in df.columns:
+            return None
+        yr = self.start_year + SPINUP + self.year_idx
+        mon = GROWING_MONTHS[self.month_idx]
+        hit = df[(df["yr"] == yr) & (df["mon"] == mon)]
+        return hit.iloc[0] if len(hit) else None
+
     def _read_state(self) -> dict:
         out = dict(sw=200.0, strsn=0.0, strsw=0.0, precip=20.0, pet=100.0)
         try:
@@ -178,16 +194,16 @@ class MonthlySwatEnv:
             pw = self.runner.read("hru_pw_mon.txt")
         except Exception:
             return out
-        if wb is not None and len(wb):
-            row = wb.iloc[-1]
+        row = self._decided_row(wb)
+        if row is not None:
             for key, candidates in (("sw", ("sw_final", "sw")), ("precip", ("precip", "rain")),
                                     ("pet", ("pet",))):
                 for c in candidates:
                     if c in row.index:
                         out[key] = float(row[c])
                         break
-        if pw is not None and len(pw):
-            row = pw.iloc[-1]
+        row = self._decided_row(pw)
+        if row is not None:
             for key in ("strsn", "strsw"):
                 if key in row.index:
                     out[key] = float(row[key])
