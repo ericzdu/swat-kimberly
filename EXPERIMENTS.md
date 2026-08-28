@@ -29,7 +29,9 @@ now exits 2 rather than leaving that to the operator (`FORCE_PPO=1` overrides de
 The gate is **λ_n-independent** (the ceiling scores at `no3_price = 0` by construction), so it
 is computed once and reused across frontier points instead of re-run per `OUT_TAG`. The key is
 `foresight_test`, not `ceiling_test`: an under-converged oracle biases it *down*, so a policy
-can legitimately exceed it. Measured 2026-08-06: **+836 ± 68 $/ha**.
+can legitimately exceed it. ~~Measured 2026-08-06: +836 ± 68 $/ha.~~ **Stale — re-run before
+quoting (2026-08-28):** `runs/exp1_ceiling.json` is not on disk, the ± was a naive SE that rule 7
+no longer permits, and the figure predates the rule 11b crop-parameter reconciliation.
 
 ## Five-row protocol
 
@@ -131,9 +133,11 @@ not done when the profit column is filled in.
       gives **one point**; the deliverable is the set. Publishing one interior point as "the"
       answer is the failure rule 1 exists to prevent.
 - [ ] **The leaching column is non-degenerate before any sustainability claim.** At measured
-      practice the signal is sparse across windows — 2.40 kg/ha/yr in the 2013-start window and
-      ~0 in the other four (OPEN_ITEMS #11). If the arms being compared do not separate on
-      leaching, report that as the finding; do not report a frontier drawn through noise.
+      practice the signal is **zero**, not merely sparse: re-measured 2026-08-28, percolation
+      and nitrate are 0.00 at the measured and default schedules, and drainage begins only above
+      ~×1.2 applied water (OPEN_ITEMS #11). λ_n therefore separates arms only where one
+      over-irrigates. If the arms being compared do not separate on leaching, report that as the
+      finding; do not report a frontier drawn through zeros.
 - [ ] **Both limits restated wherever a sustainability claim is made:** leaching unvalidated on
       site, N₂O Tier 1 accounting and never priced.
 
