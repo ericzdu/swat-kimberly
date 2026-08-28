@@ -68,6 +68,31 @@ Working checklist for PAPER.md. Not part of the manuscript.
     drinking-water standard, which is the concern motivating the paper. ET/PET is **0.66–0.70**
     at measured practice against the 0.86 recorded above, and PET is 1,165 mm/yr.
 
+    > ⚠️ **Re-measured 2026-08-28 and the table above no longer reproduces.** Same script,
+    > same command, current model (`runs/percolation_check.json`):
+    >
+    > | applied mm | perc mm/yr | NO₃ kg/ha/yr | implied mg/L |
+    > |---|---|---|---|
+    > | 2,363 (×0.6) | 0.00 | 0.00 | — |
+    > | 3,151 (×0.8) | 0.00 | 0.00 | — |
+    > | **3,939 (×1.0)** | **0.00** | **0.00** | **—** |
+    > | 4,727 (×1.2) | 16.08 | 1.22 | 7.6 |
+    > | 5,366 (×1.4) | 76.82 | 8.28 | 10.8 |
+    > | 5,778 (×1.6) | 117.11 | 27.49 | 23.5 |
+    >
+    > The threshold has moved out past ×1.2: **at measured practice and at the generated
+    > default the leaching column is now exactly zero**, where the 2026-08-06 table recorded
+    > 9.40 mm and 1.69 kg N/ha. Implied concentrations are 0.0–23.5 mg/L rather than
+    > 13.6–26.5. The five measured test windows give 16.01 / 0.10 / 0.33 / 0.00 / 5.71 mm,
+    > so the between-window sparsity noted below is worse than recorded, not better.
+    >
+    > The drift is not the rule 11b reconciliation of 2026-08-28 (which barely moved these
+    > rows — corn's years are not the draining ones). It predates it and its cause is not
+    > established; the most likely candidate is `alfa.bm_e` reverting 12.25 → 17.0, which
+    > grows more alfalfa, transpires more and drains less. **Whatever the cause, no
+    > sustainability claim may cite the superseded numbers, and the λ_n frontier now separates
+    > arms only where an arm over-irrigates by ≥ 20 %.**
+
     **Consequence:** the leaching column is usable for *within-model ranking* and can carry the
     λ_n frontier. It is still **not validated against measurement** at this site, so magnitudes
     are not field claims — that part of the finding stands. One caveat for uncertainty: at
@@ -144,3 +169,46 @@ submission.
     - `rerun_exp1.sh` re-ran the λ_n-independent foresight gate for every frontier point, and
       left "do not start PPO if the gate fails" to the operator. It now reuses one gate and
       exits 2 on `gate_pass: false` unless `FORCE_PPO=1`.
+
+
+14. **The corn N-stress premise has tripped (2026-08-28).**
+    `tests/test_fastrunner.py::test_corn_is_n_stressed_and_alfalfa_is_not` asserts 2018 corn
+    runs > 20 days of nitrogen stress, and its docstring says a trip "means the annual/perennial
+    N asymmetry Exp 1 is premised on has stopped holding, which wants investigating (and
+    re-premising Exp 1), not relaxing." Restoring corn's workbook parameters under rule 11b took
+    2018 corn from **20.8 → 5.2** days and 2013 corn from 7.8 → 0.6: the smaller book `bm_e` and
+    `lai_pot` grow less corn, which demands less nitrogen. The asymmetry still holds through
+    barley (2019 = 35.7 days, alfalfa = 0 in all three years), but corn no longer carries it.
+    **Resolved 2026-08-28: the workbook values stand, having been separately validated, so
+    corn's 20 d cannot return by any legitimate route.** The test was therefore *re-premised*,
+    not relaxed — the floor is now asserted on the annual crops collectively (barley carries it
+    at 35.7 d) and alfalfa's zero is checked across all three of its years, with corn's own
+    value kept as a ceiling to catch the opposite drift. Renamed
+    ``test_annuals_are_n_stressed_and_alfalfa_is_not``.
+
+15. **`pet_co` stays at 0.964 — decided 2026-08-28, do not re-litigate.**
+    The prescribed ET protocol (remove nutrient stress → fit canopy → PET last) was executed in
+    full against a regional OpenET per-crop benchmark. Every step is recorded in
+    `scripts/et_nostress.py` and `scripts/et_gap_check.py`, with artefacts under
+    `runs/et_*.json`. It does **not** justify moving `pet_co`, for four measured reasons:
+
+    - Nitrogen accounts for none of the gap. At the minimal no-stress rate (600 kg N/ha/season
+      on the annuals) biomass rises up to 50 % and annual ET moves **< 0.4 %**.
+    - Canopy accounts for none of it. `lai_pot` ×2 and `esco` across its whole range each move
+      the crop coefficient by **≤ 0.02**, because realised peak LAI is already 3.9–4.6, past
+      SWAT's LAI ≥ 3 transpiration saturation.
+    - A quarter to two-fifths of the gap is **water supply, not the model**: attaching
+      `irr_str9_unlim` lifts alfalfa's Kc 0.81 → 0.90 and corn's 0.86 → 0.91. The benchmark
+      fields were irrigated more than this one; that is management and must not be calibrated
+      away.
+    - On the corrected model no single value fits: at the flat optimum (1.10–1.20) corn stays
+      4–10 % short while barley overshoots 9–13 %. Corn's residual is a *growth* deficit under
+      the validated workbook parameters (yield −24.6 %), and absorbing it into PET is exactly
+      the error PROVENANCE §5h documents. Applied to the shipped model, `pet_co = 1.15` does not
+      even raise ET (840 → 844 mm, because irrigation is fixed) — it converts demand into water
+      stress (10.7 → 27.3 d) and pushes the already-zero leaching column further out.
+
+    **What to write instead of a fitted value:** in-crop ET is 11–31 % below the regional
+    benchmark, decomposed as above, reported as a quantified limitation. The benchmark is 21
+    *different* Magic Valley fields in 2020–22 with its own 10–20 % field-scale uncertainty, so
+    it bounds the bias rather than validating this field.

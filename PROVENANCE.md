@@ -857,6 +857,33 @@ soil-nitrate trajectory of §5i, with PET held as a bound.
 | PET vs measured ETos | +0.0 % | +0.0 % |
 | soil-nitrate RMS miss | 91.4 kg/ha | 94.4 kg/ha |
 
+> ⚠️ **Superseded 2026-08-28 — the "after" column describes a model that is no longer on disk,
+> and deliberately so.** Rule 11b (decided 2026-08-07, six days after this fit) returned the
+> crop coefficients to the collaborator's workbook, which reverts the six ``bm_e``/``lai_pot``
+> entries and the three ``harv.ops`` harvest indices this fit had moved. That reversion was
+> applied to barley and alfalfa but **not to corn**, so between 2026-08-07 and 2026-08-28 the
+> model matched neither the fit nor the workbook: corn still carried ``bm_e = 64.5`` and
+> ``lai_pot = 4.95`` — the value rule 11b names explicitly — plus three canopy-curve columns
+> retired in ``port_crops.py``'s comments and never undone in the file. Reconciled 2026-08-28
+> and now enforced by ``scripts/check_param_state.py`` and ``tests/test_param_state.py``.
+>
+> **The model as it now stands**, measured by ``scripts/calib_report.py``:
+>
+> | | fit as reported above | on disk 2026-08-28 |
+> |---|---|---|
+> | yield, RMS per-year | 13.6 % | **42.3 %** |
+> | yield, PBIAS | −3.0 % | **+9.3 %** |
+> | corn / alfalfa / barley | −7.0 / +2.2 / −4.9 | **−24.6 / +49.5 / +3.9** |
+> | PET vs measured ETos | +0.0 % | +0.0 % |
+> | soil-nitrate RMS, all years | 94.4 kg/ha | 90.9 kg/ha |
+>
+> This is the cost rule 11b priced and accepted — "book values keep the bias legible" — but it
+> is a much larger cost than the 2.3 points of mean |PBIAS| the rule quotes, because alfalfa's
+> ``bm_e`` reverting 12.25 → 17.0 leaves it **+49.5 %** over measurement. Two consequences
+> follow and neither is settled: any yield-dependent result must be read under a +49.5 %
+> alfalfa bias, and if the fit is ever re-run it must exclude the workbook columns (which
+> ``PARAMS`` already does) so that the two writers cannot diverge again.
+
 Nine move within a **±30 % window around the site's own calibrated table** — `bm_e` and
 `lai_pot` for each crop, and the three `harv.ops` harvest indices. Five had no source value at
 all: `alfa.lai_min`, `corn`/`barl.days_mat`, `epco`, `orgn_min`.

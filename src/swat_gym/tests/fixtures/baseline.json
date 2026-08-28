@@ -3,8 +3,8 @@
     "engine": "swatplus_rev62.0.0",
     "platform": "macOS-26.4-arm64-arm-64bit",
     "machine": "arm64",
-    "regenerated": "2026-08-08",
-    "model": "use collaborator's exact crop coefficients; crop params removed from optimizer free set; pet_co refit (rule 11b)",
+    "regenerated": "2026-08-28",
+    "model": "rule 11b reconciliation: corn bm_e 64.5->50.0, lai_pot 4.95->4.0 and the canopy curve (frac_hu1/lai_max1/frac_hu2) restored to the collaborator's workbook; barley and alfalfa were already compliant. See scripts/check_param_state.py.",
     "note": "Regression gate. A different SWAT+ build (e.g. a Linux/WSL ELF engine) must reproduce these numbers; a deviation is build disagreement, not a code bug. Regenerate with scripts/rebaseline.py."
   },
   "yields": [
@@ -12,59 +12,59 @@
       "year": 2013,
       "crop": "corn",
       "cuts": 1.0,
-      "yld_t": 21.0905857
+      "yld_t": 15.6108675
     },
     {
       "year": 2014,
       "crop": "barl",
       "cuts": 1.0,
-      "yld_t": 9.12671089
+      "yld_t": 9.12777138
     },
     {
       "year": 2015,
       "crop": "alfa",
       "cuts": 2.0,
-      "yld_t": 13.2518177
+      "yld_t": 13.5343294
     },
     {
       "year": 2016,
       "crop": "alfa",
       "cuts": 3.0,
-      "yld_t": 21.468214
+      "yld_t": 21.4919949
     },
     {
       "year": 2017,
       "crop": "alfa",
       "cuts": 3.0,
-      "yld_t": 24.6785736
+      "yld_t": 24.683239
     },
     {
       "year": 2018,
       "crop": "corn",
       "cuts": 1.0,
-      "yld_t": 20.2363968
+      "yld_t": 18.354929
     },
     {
       "year": 2019,
       "crop": "barl",
       "cuts": 1.0,
-      "yld_t": 6.14602757
+      "yld_t": 6.12657261
     }
   ],
   "water_mean": {
     "precip": 281.8311428571428,
-    "et": 839.9312857142858,
+    "et": 832.9797142857143,
     "pet": 1156.9458571428572,
     "perc": 1.156,
     "irr": 562.6825714285714
   },
   "nstress_days": {
-    "2013": 7.765,
-    "2014": 1.981,
+    "2013": 0.634,
+    "2014": 1.965,
     "2015": 0.0,
     "2016": 0.0,
     "2017": 0.0,
-    "2018": 20.822,
-    "2019": 35.539
+    "2018": 5.16,
+    "2019": 35.695
   }
 }

@@ -141,7 +141,15 @@ OVERRIDES: dict[tuple[str, str], tuple[float, str]] = {
     # hydrology.hyd ``pet_co`` 0.81, which turned out to cost 16 % PET bias against measured
     # ETos and to be treating a symptom; ``pet_co`` is now calibrated to 0.964 and the drainage
     # collapse is an open engine-difference finding — PROVENANCE §5h, OPEN_ITEMS #11.
-    ("alfa", "lai_min"): (1.75, "FIT: trades resident-perennial PAR theft against drainage"),
+    #
+    # **Ownership, settled 2026-08-28.** ``lai_min`` has no workbook value and *is* in
+    # ``calibrate/optimize.py:PARAMS``, so the optimizer owns it — but this table also wrote it,
+    # and the two silently fought: any ``port_crops.py`` run after an ``optimize.py --apply``
+    # reverted the fitted value to 1.75 without saying so. The number here is therefore the
+    # **last applied fit**, kept so that re-porting is idempotent rather than destructive.
+    # Re-fit it with the optimizer, then update this constant; never edit it to a value the
+    # optimizer has not produced. ``scripts/check_param_state.py`` fails if the two disagree.
+    ("alfa", "lai_min"): (1.01216, "last applied fit (calibrate/optimize.py owns this)"),
     # REMOVED 2026-08-07 (CLAUDE.md rule 11b): ("alfa", "bm_e") -> 10.0. Its own rationale
     # said the quiet part out loud -- "it is absorbing the over-prediction, not measuring
     # radiation-use efficiency" -- which is exactly why it goes. The workbook's 17.0 stands.

@@ -109,6 +109,8 @@ Suggested map after Exp 1 smoke is green:
 
 ## Gate checklist before full runs
 
+- [ ] `uv run python scripts/check_param_state.py` PASS — the model's crop parameters are the
+      collaborator's workbook (rule 11b) and no fit has silently reverted them
 - [ ] `uv run pytest` green
 - [ ] `uv run pytest -m slow` — monthly default irrigation within 1% of 3,938.8 mm
 - [ ] `assert_no_leakage()` passes (import `swat_gym.windows`)
