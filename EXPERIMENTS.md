@@ -24,7 +24,10 @@ pytest → exp1_ceiling → exp1_controller → exp1_irrigation → exp2_nitroge
 ```
 
 Do **not** start Exp 4 until Exp 1’s frozen-plan sign is stable across seeds.
-Do **not** start cluster PPO if `exp1_ceiling` reports `gate_pass: false`. The key is
+Do **not** start cluster PPO if `exp1_ceiling` reports `gate_pass: false` — `rerun_exp1.sh`
+now exits 2 rather than leaving that to the operator (`FORCE_PPO=1` overrides deliberately).
+The gate is **λ_n-independent** (the ceiling scores at `no3_price = 0` by construction), so it
+is computed once and reused across frontier points instead of re-run per `OUT_TAG`. The key is
 `foresight_test`, not `ceiling_test`: an under-converged oracle biases it *down*, so a policy
 can legitimately exceed it. Measured 2026-08-06: **+836 ± 68 $/ha**.
 
@@ -59,7 +62,8 @@ Outputs: `runs/exp1_ceiling.json`, `runs/exp1_controller.json`, `runs/exp1_irrig
 ### Exp 2 — Nitrogen
 
 ```bash
-uv run python -m swat_gym.experiments.exp2_nitrogen --budget 300000
+uv run python -m swat_gym.experiments.exp2_nitrogen --budget 300000 \
+    --max-n none --ppo-seeds 3
 ```
 
 Output: `runs/exp2_nitrogen.json`.
@@ -67,9 +71,9 @@ Output: `runs/exp2_nitrogen.json`.
 ### Exp 3 — Rotation (enumerate)
 
 ```bash
-uv run python -m swat_gym.experiments.exp3_rotation
+uv run python -m swat_gym.experiments.exp3_rotation --max-n none
 # smoke:
-uv run python -m swat_gym.experiments.exp3_rotation --max-seqs 50
+uv run python -m swat_gym.experiments.exp3_rotation --max-n none --max-seqs 50
 ```
 
 Output: `runs/exp3_rotation.json`. No PPO.
@@ -77,7 +81,8 @@ Output: `runs/exp3_rotation.json`. No PPO.
 ### Exp 4 — Joint
 
 ```bash
-uv run python -m swat_gym.experiments.exp4_joint --budget 300000 --ppo-seeds 3
+uv run python -m swat_gym.experiments.exp4_joint --budget 300000 --ppo-seeds 3 \
+    --max-n none
 ```
 
 Warm-starts from Exp 2/3 artefacts when present. Rule: joint < composed ⇒ optimizer, not interaction.
@@ -109,6 +114,12 @@ Suggested map after Exp 1 smoke is green:
 - [ ] `assert_no_leakage()` passes (import `swat_gym.windows`)
 - [ ] `exp1_ceiling` written; if `gate_pass` false, skip PPO
 - [ ] Water price sourced or breakeven reported (re-optimize under sweep when sourced)
+- [ ] **`--max-n` passed explicitly and identical across every experiment being composed.**
+      Exp 1 is uncapped, so Exp 2/3/4 need `--max-n none` to compose with it. The runners now
+      refuse to start without the flag, and Exp 4 refuses to warm-start across a mismatch.
+- [ ] **Intervals quoted as `se_ess`, never `se_naive`.** ESS is 1.25 on the five test windows,
+      so anything under a few hundred $/ha is not resolvable by this split — say that rather
+      than quoting a tight naive SE.
 
 **Sustainability gates.** Nitrate is the second objective, not an annotation, so an experiment is
 not done when the profit column is filled in.

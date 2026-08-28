@@ -60,6 +60,7 @@ import argparse
 import hashlib
 import json
 import pickle
+import sys
 import time
 from pathlib import Path
 
@@ -74,7 +75,7 @@ from ..rewarders import Prices, average, profit
 from ..schedule import YearAction
 from ._optimize import minimise
 
-from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage
+from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage, effective_n
 
 ROOT = Path(__file__).resolve().parents[3]
 assert_no_leakage()
@@ -97,8 +98,15 @@ def _row(d: dict, start_year: int, *, yield_mg: float | None = None) -> dict:
             "n2o_kg": d.get("n2o_kg"), "yield_mg": yield_mg}
 
 
-def paired(a: list[dict], b: list[dict]) -> dict:
-    """Mean and standard error of the per-window paired difference ``a - b``.
+#: Bootstrap replicates for :func:`paired`. Fixed, and the seed with it, so an interval is a
+#: property of the rows rather than of when it was computed.
+N_BOOT = 10_000
+BOOT_SEED = 0
+
+
+def paired(a: list[dict], b: list[dict], *, n_boot: int = N_BOOT,
+           seed: int = BOOT_SEED) -> dict:
+    """The per-window paired difference ``a - b``, with an interval that respects the design.
 
     Paired, because both rows are scored on the **same** weather windows in the same order:
     the window-to-window spread of profit is far larger than the differences between rows, and
@@ -106,11 +114,45 @@ def paired(a: list[dict], b: list[dict]) -> dict:
     mean of 7 windows with no dispersion at all, read against a noise floor that
     :data:`~swat_gym.env.ACTION_DIM` estimates at 200-300 $/ha — so "PPO loses by 696" had no
     way to be checked.
+
+    **There is deliberately no key called ``se``.** The five held-out windows are eight years
+    long and start one year apart, so they share up to seven of their eight years;
+    ``sd / sqrt(n)`` treats them as five independent draws and overstates precision by about
+    ``sqrt(n / ESS)`` ≈ 2×. `CLAUDE.md` rule 7 forbids publishing it, so it is reported under
+    the name ``se_naive`` — kept only because the ratio to ``se_ess`` is the thing a reader
+    needs to see — and the number to quote is ``se_ess``, which divides by the effective sample
+    size from :func:`~swat_gym.windows.effective_n` (1.25 for the test set, not 5).
+
+    Both intervals are reported, and they answer different questions:
+
+    * ``ci95_boot`` — percentile bootstrap resampling windows. It captures the shape of the
+      per-window differences (they are not Gaussian, and n = 5) but **still treats the windows
+      as exchangeable and independent**, so it is optimistic in exactly the way ``se_naive`` is.
+    * ``ci95_ess`` — ``mean ± 1.96 · se_ess``. Wide, and still optimistic: it uses a normal
+      quantile where ESS = 1.25 would demand a t quantile at 0.25 degrees of freedom, which is
+      enormous. With this design, an honest reading of a difference smaller than a few hundred
+      $/ha is "not resolvable", and that is a fact about the split, not about the method.
     """
     d = np.array([r["profit"] for r in a]) - np.array([r["profit"] for r in b])
+    n = int(d.size)
+    starts = [r.get("start_year") for r in a]
+    known = [s for s in starts if s is not None]
+    ess = effective_n(known) if len(known) == n and n > 1 else float(n)
+    sd = float(d.std(ddof=1)) if n > 1 else float("nan")
+    se_naive = sd / np.sqrt(n) if n > 1 else float("nan")
+    se_ess = sd / np.sqrt(ess) if n > 1 and ess > 0 else float("nan")
+    if n > 1:
+        rng = np.random.default_rng(seed)
+        means = d[rng.integers(0, n, size=(n_boot, n))].mean(axis=1)
+        ci_boot = [float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))]
+        ci_ess = [float(d.mean() - 1.96 * se_ess), float(d.mean() + 1.96 * se_ess)]
+    else:
+        ci_boot = ci_ess = [float("nan"), float("nan")]
     return {"mean": float(d.mean()),
-            "se": float(d.std(ddof=1) / np.sqrt(d.size)) if d.size > 1 else float("nan"),
-            "n": int(d.size),
+            "n": n, "ess": float(ess), "sd": sd,
+            "se_naive": float(se_naive), "se_ess": float(se_ess),
+            "ci95_boot": ci_boot, "ci95_ess": ci_ess,
+            "resolvable": bool(n > 1 and ci_ess[0] * ci_ess[1] > 0),
             "per_window": [round(float(v), 1) for v in d]}
 
 
@@ -162,8 +204,15 @@ def _load_partial(path: Path | None, cfg: dict):
 
 
 def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
-                   partial_path: Path | None = None, cfg: dict | None = None):
+                   partial_path: Path | None = None, cfg: dict | None = None,
+                   x0=None):
     """CMA-ES over the arm's free parameters, checkpointing the strategy as it goes.
+
+    ``x0`` is the search start point, defaulting to :func:`~swat_gym.env.default_free`. Exp 4
+    passes the composed single-lever optimum here: a warm start that is computed and then not
+    handed to the optimizer is worse than none, because the artefact records a warm start that
+    never happened and rule 8 ("joint < composed ⇒ optimizer, not interaction") is then read
+    against a search that never saw the composed point.
 
     ``evals`` is the **total** budget. A resume restores the pickled
     :class:`cma.CMAEvolutionStrategy` — covariance and step size included — so it finishes at
@@ -200,7 +249,12 @@ def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
                 "train_obj": -best_f, "x": list(map(float, best_x)),
             }))
 
-        best, n_evals, history = minimise(score, default_free(arm), evals=evals, seed=seed,
+        start = default_free(arm) if x0 is None else np.asarray(x0, dtype=float)
+        if start.shape != default_free(arm).shape:
+            raise ValueError(
+                f"warm start has shape {start.shape}, arm {arm!r} expects "
+                f"{default_free(arm).shape} free parameters")
+        best, n_evals, history = minimise(score, start, evals=evals, seed=seed,
                                           state=state, on_generation=checkpoint)
         # Engine runs spent before this process started, at one run per window per evaluation.
         n_runs = runner.n_runs + done * len(train_windows)
@@ -367,7 +421,28 @@ def _save_stage(out: Path, name: str, cfg: dict, payload) -> None:
 
 # -- the experiment ------------------------------------------------------------------------
 
-def run(arm: str, out_path: Path, argv=None) -> dict:
+def _max_n_arg(text: str) -> float | None:
+    """Parse ``--max-n``: a number, or ``none``/``off`` for an uncapped run.
+
+    There is no default. `CLAUDE.md` rule 2 exists because a cap applied on one code path and
+    not another changes what is simulated without changing what is priced — which inverted
+    Exp 1's headline once. The cap also binds hard on the baseline itself (``DEFAULT_PLAN``
+    applies 569 and 936 kg N/ha in its two fertilised years, both clipped to 400), so a run
+    under a different cap is a run in a different world, not a stricter version of the same
+    one. Making it explicit is what stops two experiments being composed across that line.
+    """
+    t = text.strip().lower()
+    if t in {"none", "off", "uncapped"}:
+        return None
+    try:
+        v = float(t)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--max-n expects a number or 'none', got {text!r}") from None
+    return v if v > 0 else None
+
+
+def run(arm: str, out_path: Path, argv=None, *, x0=None) -> dict:
     ap = argparse.ArgumentParser()
     ap.add_argument("--budget", type=int, default=300_000,
                     help="engine runs, matched across PPO and CMA-ES "
@@ -381,15 +456,21 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
                     help="PPO replicates (seed, seed+100, ...). The CMA-ES row is shared: the "
                          "policy is the stochastic half and the one whose null is reported.")
     ap.add_argument("--no3-price", type=float, default=0.0)
-    ap.add_argument("--max-n", type=float, default=MAX_N_LOADING,
-                    help="N loading cap kg N/ha/yr; 0 or negative disables it entirely")
+    ap.add_argument("--max-n", type=_max_n_arg, default=None, metavar="KG|none",
+                    help=f"REQUIRED. N loading cap kg N/ha/yr (the paper's value is "
+                         f"{MAX_N_LOADING:g}), or 'none' for an uncapped run. Deliberately has "
+                         f"no default: it must match across every experiment whose results are "
+                         f"composed or compared (rule 2)")
     ap.add_argument("--out", type=Path, default=out_path)
     args = ap.parse_args(argv)
 
+    tokens = list(argv) if argv is not None else sys.argv[1:]
+    if not any(t == "--max-n" or t.startswith("--max-n=") for t in tokens):
+        ap.error("--max-n is required: pass '--max-n 400' for the capped world or "
+                 "'--max-n none' for the uncapped one. Exp 1 runs uncapped, so composing or "
+                 "comparing against it needs 'none' here (rule 2).")
     prices = average()
-    # A non-positive cap means "no cap", which is how the {400, uncapped} sweep asks whether
-    # MAX_N_LOADING was ever binding rather than just being the number we happened to report.
-    max_n = args.max_n if args.max_n > 0 else None
+    max_n = args.max_n
     t0 = time.time()
 
     if args.fixed_windows <= 0 or args.fixed_windows >= len(TRAIN_YEARS):
@@ -413,7 +494,11 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     # the widened observation — are each invisible in the argument list. `obs_dim` in particular
     # must be here: a stale PPO policy with a 7-wide input silently loads against an 11-wide
     # space. Keying on the values themselves means no one has to remember to bump a revision.
+    # The warm start is part of the question, so it is part of the checkpoint key: a cold
+    # partial must never be resumed into a warm run, or the reported start point is fiction.
+    x0_key = None if x0 is None else [round(float(v), 6) for v in np.asarray(x0).ravel()]
     cfg = {"arm": arm, "budget": args.budget, "seed": args.seed, "max_n": max_n,
+           "x0": x0_key,
            "no3_price": args.no3_price, "fixed_windows": fixed_windows,
            "prices": prices.label, "fert_op": prices.fert_op, "manure": prices.manure,
            "obs_dim": OBS_DIM, "irr_eff": IRR_EFF,
@@ -452,7 +537,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
         pp = _stage(args.out, "fixed").with_suffix(".partial.pkl")
         x, n_evals, fixed_runs, cma_history = optimize_fixed(
             arm, fixed_windows, evals, args.seed, prices, args.no3_price,
-            max_n, partial_path=pp, cfg=cfg)
+            max_n, partial_path=pp, cfg=cfg, x0=x0)
         _save_stage(args.out, "fixed", cfg,
                     {"x": list(map(float, x)), "n_evals": n_evals,
                      "engine_runs": fixed_runs, "seconds": time.time() - t0,
@@ -503,7 +588,12 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
                        "adaptivity_value": mean(p_test) - mean(frozen_test)}
 
     def across(k):
-        """Mean and standard error of ``k`` across seeds — the seed-variance estimate."""
+        """Mean and standard error of ``k`` across seeds — the seed-variance estimate.
+
+        ``sd / sqrt(n_seeds)`` is the *correct* estimator here and is deliberately unlike the
+        window-paired one: PPO seeds are independent draws, whereas the held-out windows
+        overlap. Keyed ``se`` rather than ``se_naive``/``se_ess`` for that reason.
+        """
         v = np.array([per_seed[s][k] for s in seeds])
         return {"mean": float(v.mean()),
                 "se": float(v.std(ddof=1) / np.sqrt(v.size)) if v.size > 1 else float("nan"),
@@ -533,7 +623,8 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
 
     summary = {
         "arm": arm, "prices": prices.label, "budget_engine_runs": args.budget,
-        "max_n": max_n, "fert_op": prices.fert_op,
+        "max_n": max_n, "no3_price": args.no3_price, "fert_op": prices.fert_op,
+        "warm_start": x0_key is not None,
         "train_years": TRAIN_YEARS, "test_years": TEST_YEARS,
         "fixed_windows": fixed_windows,
         "cma_evals": n_evals, "cma_engine_runs": fixed_runs, "ppo_timesteps": args.budget,
@@ -607,11 +698,18 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     print(f"{'  its own plan, frozen':<26}{'':>10}{m['frozen_best_test']:>11.0f}"
           f"{vd['frozen']:>+12.0f}{v['frozen']:>+11.0f}")
 
-    # Paired across the same held-out windows, so these standard errors are the ones that
-    # decide whether any of the differences above are real.
-    print(f"\n{'paired held-out differences':<30}{'mean':>10}{'± s.e.':>10}")
+    # Paired across the same held-out windows. The interval that decides whether a difference
+    # is real is the ESS one: five eight-year windows one year apart are not five independent
+    # draws, and the naive column is printed beside it only to show by how much it lies.
+    ess = summary["paired_test"]["fixed_vs_default"]["ess"]
+    print(f"\n{'paired held-out differences':<30}{'mean':>10}{'se(ESS)':>10}{'se(naive)':>11}"
+          f"{'95% CI (ESS)':>24}")
     for name, p in summary["paired_test"].items():
-        print(f"{name:<30}{p['mean']:>+10.0f}{p['se']:>10.0f}")
+        lo, hi = p["ci95_ess"]
+        print(f"{name:<30}{p['mean']:>+10.0f}{p['se_ess']:>10.0f}{p['se_naive']:>11.0f}"
+              f"{f'[{lo:+.0f}, {hi:+.0f}]':>24}")
+    print(f"  n = {len(TEST_YEARS)} held-out windows, effective sample size {ess:.2f} "
+          f"(rule 7: quote se(ESS), never se(naive))")
     share = ("n/a — the policy has no edge over the fixed schedule to apportion"
              if adaptivity_share is None else f"{100 * adaptivity_share:+.0f} % of it")
     print(f"\npolicy over fixed: {adv:+.0f} $/ha")

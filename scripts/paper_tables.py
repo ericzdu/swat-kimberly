@@ -46,8 +46,22 @@ def _fmt(x: float | None, digits: int = 0) -> str:
     return f"{x:.{digits}f}"
 
 
-def _paired(mean: float, se: float) -> str:
-    return f"{mean:+,.0f} ± {se:,.0f}"
+def _paired(p: dict) -> str:
+    """``mean ± se`` where the s.e. is the ESS one — the only one rule 7 permits in the paper.
+
+    Held-out windows overlap by up to seven of their eight years, so ``se_naive`` (kept in the
+    artefact for comparison) claims about twice the precision the split bought. Reading
+    ``p["se"]`` raises ``KeyError`` on purpose: any artefact still carrying that key predates
+    the fix and its intervals must not be published.
+    """
+    return f"{p['mean']:+,.0f} ± {p['se_ess']:,.0f}"
+
+
+def _ess_note(p: dict) -> str:
+    """The sentence that has to travel with every interval in the paper (rule 7)."""
+    return (f"± is one standard error over the n = {p['n']} held-out windows, divided by the "
+            f"effective sample size {p['ess']:.2f} rather than by n: the windows are eight "
+            f"years long and start one year apart, so they are not independent draws.")
 
 
 def _md(title: str, headers: list[str], rows: list[list[str]], note: str = "") -> str:
@@ -243,19 +257,19 @@ def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
         [
             "Generated monthly default",
             _fmt(mp["default_test"]),
-            _paired(paired["default_vs_measured"]["mean"], paired["default_vs_measured"]["se"]),
+            _paired(paired["default_vs_measured"]),
             "0",
         ],
         [
             "CMA-ES open-loop (fixed)",
             _fmt(mp["fixed_test"]),
             "—",
-            _paired(paired["fixed_vs_default"]["mean"], paired["fixed_vs_default"]["se"]),
+            _paired(paired["fixed_vs_default"]),
         ],
         ["CMA feedback controller", _fmt(controller["test"]), "—", "—"],
         [
             "Ceiling (oracle − shared)",
-            _paired(ceil["mean"], ceil["se"]),
+            _paired(ceil),
             "—",
             "—",
         ],
@@ -269,7 +283,7 @@ def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
             ["Policy − fixed", _fmt(full.get("advantage_over_fixed")), "", ""],
             ["Policy − frozen (adaptivity)", _fmt(full.get("adaptivity_value")), "", ""],
         ]
-        note = ""
+        note = _ess_note(paired["fixed_vs_default"])
     else:
         rows += [
             ["PPO policy", "—*", "—*", "—*"],
@@ -279,7 +293,8 @@ def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
         ]
         note = (
             "*TODO: fill from runs/exp1_irrigation.json "
-            "(3 PPO seeds; mean ± SE for advantage and adaptivity)."
+            "(3 PPO seeds; mean ± SE for advantage and adaptivity). "
+            + _ess_note(paired["fixed_vs_default"])
         )
     title = "Table 2. Exp 1 test profit ($/ha), window starts 2013–2017."
     return title, headers, rows, note

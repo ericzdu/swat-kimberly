@@ -17,6 +17,11 @@ Working checklist for PAPER.md. Not part of the manuscript.
    actual ET is now **+17 %** against the reference model (835 vs 711 mm). See #11.
 8. Confirm co-authors and affiliations.
 9. Full cluster runs for Exp 1–4 at production budgets (see EXPERIMENTS.md / CLAUDE.md).
+   **2026-08-28: `runs/exp1_ceiling.json` is not on disk.** The +836 ± 68 quoted below and in
+   PAPER.md §6.2 has no surviving artefact — `runs/` is gitignored and only
+   `exp1_ceiling_smoke.json` (+45, `gate_pass: false`, tiny budget) remains. The figure is
+   currently unreproducible and must be regenerated before it is quoted; its ± was also a naive
+   SE, which rule 7 no longer permits (re-run it and quote `se_ess`).
    Foresight gate at full budget, uncapped, 2026-08-06: **+836 ± 68 $/ha** on test
    (`runs/exp1_ceiling.json`), well clear of the 250 noise floor — proceed to PPO is
    justified, and a null for closed-loop control cannot be blamed on there being nothing
@@ -115,3 +120,27 @@ submission.
 - Object-area performance trap: correcting containing-object areas made every execution path
   approximately 3× faster, the engine having routed flow through a 1,432 ha channel network for a
   1 ha field.
+
+
+13. **Methodology fixes applied 2026-08-28** (all pinned by tests in `test_focused.py`):
+    - `exp4_joint` computed a composed warm start, recorded `"warm_start": true`, and passed
+      nothing to the optimizer — `run()` took no start point. The search ran cold while the
+      artefact claimed otherwise, which is precisely the reading rule 8 depends on. `run()` now
+      takes `x0`, threads it into CMA-ES, and puts it in the checkpoint key so a cold partial
+      cannot be resumed into a warm run.
+    - `--max-n` had a silent default of 400 in `_focused.run` and in `exp3_rotation`'s
+      `evaluate()` calls, while Exp 1 forced `None`. The cap binds on `DEFAULT_PLAN` itself, so
+      Exp 3/4 were simulating a different fertiliser regime from Exp 1's baseline and composing
+      them would have repeated the capped/uncapped class of error one level up. The flag is now
+      required, recorded in every artefact, and checked before Exp 4 warm-starts.
+    - Reported uncertainty was `sd/√5` over the five overlapping test windows, which rule 7
+      forbids. `paired()` now returns `se_ess` (ESS = 1.25 from `windows.effective_n`),
+      `se_naive`, a deterministic percentile bootstrap CI and an ESS-normal CI, and no longer
+      has a key called `se`.
+    - Exp 3 ranked rotations on a scalar profit at λ_n = 0, so the winner could be re-scored
+      but never re-selected at another nitrate price. Each sequence now stores its separable
+      train means, and the artefact carries a `no3_frontier` — the winning rotation at every λ
+      in the grid, exact, with no extra engine runs.
+    - `rerun_exp1.sh` re-ran the λ_n-independent foresight gate for every frontier point, and
+      left "do not start PPO if the gate fails" to the operator. It now reuses one gate and
+      exits 2 on `gate_pass: false` unless `FORCE_PPO=1`.

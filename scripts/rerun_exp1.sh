@@ -29,7 +29,11 @@ N_ENVS="${N_ENVS:-4}"
 GATE_BUDGET="${GATE_BUDGET:-2200}"
 # Dominates ceiling cost: one oracle optimisation per window, 15 windows.
 PER_WINDOW_BUDGET="${PER_WINDOW_BUDGET:-2000}"
-# SKIP_CEILING=1 reuses an existing runs/exp1_ceiling.json instead of re-searching it.
+# The foresight gate is **independent of lambda_n**: exp1_ceiling scores every arm at
+# no3_price = 0 by construction, so re-running it per frontier point burns ~1.5 h of engine
+# time to rewrite the same numbers under a new name. It is therefore reused automatically
+# whenever runs/exp1_ceiling.json already exists, and never written per-tag.
+# SKIP_CEILING=0 forces a fresh search anyway; SKIP_CEILING=1 skips even without a file.
 
 suffix=""
 [ -n "$OUT_TAG" ] && suffix="_${OUT_TAG}"
@@ -57,14 +61,28 @@ if [ $? -ne 0 ]; then
 fi
 log "preflight ok"
 
-if [ "${SKIP_CEILING:-0}" = "1" ]; then
+if [ "${SKIP_CEILING:-auto}" = "1" ]; then
     log "=== 1/3 foresight gate: SKIPPED (SKIP_CEILING=1) ==="
+elif [ "${SKIP_CEILING:-auto}" = "auto" ] && [ -f runs/exp1_ceiling.json ]; then
+    log "=== 1/3 foresight gate: reusing runs/exp1_ceiling.json (lambda_n-independent) ==="
 else
     log "=== 1/3 foresight gate (exp1_ceiling) ==="
+    # No per-tag output: one gate serves every frontier point.
     uv run python -m swat_gym.experiments.exp1_ceiling \
-        --budget "$GATE_BUDGET" --per-window-budget "$PER_WINDOW_BUDGET" \
-        ${OUT_TAG:+--out "runs/exp1_ceiling${suffix}.json"} >> "$LOG" 2>&1
+        --budget "$GATE_BUDGET" --per-window-budget "$PER_WINDOW_BUDGET" >> "$LOG" 2>&1
     log "ceiling exit=$?"
+fi
+
+# The gate is a gate: rule "do not start cluster PPO if gate_pass is false" (EXPERIMENTS.md)
+# was enforced by the operator reading a log, which is how a failed gate gets run past.
+if [ -f runs/exp1_ceiling.json ]; then
+    gate=$(uv run python -c "import json;print(json.load(open('runs/exp1_ceiling.json'))['gate_pass'])" 2>/dev/null)
+    log "gate_pass=$gate"
+    if [ "$gate" != "True" ] && [ "${FORCE_PPO:-0}" != "1" ]; then
+        log "FORESIGHT GATE FAILED -- there is nothing to adapt to above the noise floor."
+        log "Stopping before PPO. Write the bounded null, or set FORCE_PPO=1 deliberately."
+        exit 2
+    fi
 fi
 
 log "=== 2/3 feedback controller (exp1_controller) ==="

@@ -6,13 +6,18 @@ comes with the dispersion needed to read it.
 """
 from __future__ import annotations
 
+import argparse
+from pathlib import Path
+from unittest import mock
+
 import numpy as np
 import pytest
 
 from swat_gym import FastRunner
-from swat_gym.env import DEFAULT_PLAN, evaluate
-from swat_gym.experiments._focused import _row, paired
+from swat_gym.env import DEFAULT_PLAN, default_free, evaluate
+from swat_gym.experiments._focused import _max_n_arg, _row, optimize_fixed, paired, run
 from swat_gym.rewarders import average
+from swat_gym.windows import TEST_YEARS, effective_n
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +53,8 @@ def test_paired_difference_is_per_window():
     b = [{"profit": p} for p in (90.0, 4990.0, 190.0)]
     p = paired(a, b)
     assert p["mean"] == pytest.approx(10.0)
-    assert p["se"] == pytest.approx(0.0, abs=1e-9), "identical offsets have no paired spread"
+    assert p["se_ess"] == pytest.approx(0.0, abs=1e-9), "identical offsets have no paired spread"
+    assert p["se_naive"] == pytest.approx(0.0, abs=1e-9)
     assert p["n"] == 3
     # The same numbers compared unpaired would carry a standard error of ~1,600.
     assert np.std([r["profit"] for r in a], ddof=1) > 2000
@@ -56,4 +62,134 @@ def test_paired_difference_is_per_window():
 
 def test_paired_reports_finite_error_for_a_single_window():
     p = paired([{"profit": 1.0}], [{"profit": 0.0}])
-    assert p["mean"] == pytest.approx(1.0) and np.isnan(p["se"])
+    assert p["mean"] == pytest.approx(1.0) and np.isnan(p["se_ess"])
+
+
+# -- rule 7: overlapping windows are not independent draws ---------------------------------
+
+def test_paired_has_no_naive_se_under_the_reportable_name():
+    """``se`` is deliberately absent, so a stale consumer fails loudly instead of publishing.
+
+    The five held-out windows share up to seven of their eight calendar years. ``sd/sqrt(5)``
+    is the number rule 7 forbids; it survives as ``se_naive`` only so the ratio can be shown.
+    """
+    rows_a = [{"profit": p, "start_year": sy}
+              for p, sy in zip((100.0, 400.0, 250.0, 900.0, 600.0), TEST_YEARS)]
+    rows_b = [{"profit": 0.0, "start_year": sy} for sy in TEST_YEARS]
+    p = paired(rows_a, rows_b)
+    assert "se" not in p, "the naive standard error must not be reachable under this name"
+    assert p["ess"] == pytest.approx(effective_n(TEST_YEARS))
+    assert p["ess"] < p["n"], "overlapping windows cannot carry n windows of evidence"
+    assert p["se_ess"] > p["se_naive"], "ignoring overlap always overstates precision"
+    assert p["se_ess"] / p["se_naive"] == pytest.approx(np.sqrt(p["n"] / p["ess"]))
+
+
+def test_effective_sample_size_of_the_test_split():
+    """Five eight-year windows one year apart carry 1.25 windows of independent weather."""
+    assert effective_n(TEST_YEARS) == pytest.approx(1.25)
+    assert effective_n([2013]) == 1.0
+    # Disjoint windows are independent, so ESS is the count.
+    assert effective_n([1995, 2013]) == pytest.approx(2.0)
+
+
+def test_ess_interval_is_wider_than_the_bootstrap_one():
+    """Both are reported; the bootstrap resamples windows as if they were exchangeable."""
+    rows_a = [{"profit": p, "start_year": sy}
+              for p, sy in zip((100.0, 400.0, 250.0, 900.0, 600.0), TEST_YEARS)]
+    rows_b = [{"profit": 0.0, "start_year": sy} for sy in TEST_YEARS]
+    p = paired(rows_a, rows_b)
+    boot_w = p["ci95_boot"][1] - p["ci95_boot"][0]
+    ess_w = p["ci95_ess"][1] - p["ci95_ess"][0]
+    assert ess_w > boot_w
+    assert p["resolvable"] is (p["ci95_ess"][0] * p["ci95_ess"][1] > 0)
+
+
+def test_paired_bootstrap_is_deterministic():
+    """An interval must be a property of the rows, not of when it was computed."""
+    rows_a = [{"profit": p, "start_year": sy}
+              for p, sy in zip((100.0, 400.0, 250.0, 900.0, 600.0), TEST_YEARS)]
+    rows_b = [{"profit": 0.0, "start_year": sy} for sy in TEST_YEARS]
+    assert paired(rows_a, rows_b)["ci95_boot"] == paired(rows_a, rows_b)["ci95_boot"]
+
+
+# -- rule 2: the nitrogen cap can never be applied silently ---------------------------------
+
+def test_max_n_has_no_default_and_must_be_passed():
+    """``run()`` refuses to start without ``--max-n``.
+
+    The cap binds on ``DEFAULT_PLAN`` itself (569 and 936 kg N/ha clipped to 400), so a capped
+    run and an uncapped one are different worlds, not stricter and looser versions of one. A
+    default let Exp 3 and Exp 4 inherit 400 while Exp 1 ran uncapped, and composing across that
+    line is the same class of error as the cap bug that inverted Exp 1's headline.
+    """
+    with pytest.raises(SystemExit):
+        run("N", Path("/tmp/never_written.json"), ["--budget", "10"])
+
+
+def test_max_n_parser_accepts_a_number_or_none():
+    assert _max_n_arg("400") == 400.0
+    assert _max_n_arg("none") is None
+    assert _max_n_arg("0") is None
+    with pytest.raises(argparse.ArgumentTypeError):
+        _max_n_arg("lots")
+
+
+def test_the_cap_actually_binds_on_the_baseline():
+    """The premise of the rule above, measured rather than asserted."""
+    from swat_gym.constrainers import total_n
+    from swat_gym.env import decode
+    uncapped = [total_n(a) for a in decode(DEFAULT_PLAN.ravel(), max_n=None)]
+    capped = [total_n(a) for a in decode(DEFAULT_PLAN.ravel(), max_n=400.0)]
+    assert max(uncapped) > 400.0 and max(capped) == pytest.approx(400.0)
+    assert uncapped != capped, "if the cap were inert the composition rule would not matter"
+
+
+# -- rule 8: the Exp 4 warm start must reach the optimizer ----------------------------------
+
+def test_optimize_fixed_starts_from_the_warm_start_it_is_given():
+    """A warm start that is computed and then dropped makes rule 8 unreadable.
+
+    ``exp4_joint`` built the composed single-lever optimum, recorded ``"warm_start": true`` and
+    passed nothing to ``run()``. The search began cold; "joint < composed" then said something
+    about the budget rather than about lever interactions, and the artefact gave no way to tell.
+    """
+    seen = []
+
+    def fake_minimise(fn, x0, **kw):
+        seen.append(np.asarray(x0, dtype=float).copy())
+        return np.asarray(x0, dtype=float), 0, []
+
+    warm = np.clip(default_free("N") + 0.05, 0.0, 1.0)
+    with mock.patch("swat_gym.experiments._focused.minimise", fake_minimise):
+        optimize_fixed("N", [1995], evals=1, seed=0, prices=average(),
+                       no3_price=0.0, max_n=None, x0=warm)
+        optimize_fixed("N", [1995], evals=1, seed=0, prices=average(),
+                       no3_price=0.0, max_n=None)
+    assert np.allclose(seen[0], warm), "warm start did not reach the optimizer"
+    assert np.allclose(seen[1], default_free("N")), "cold start should use the arm default"
+    assert not np.allclose(seen[0], seen[1])
+
+
+def test_warm_start_shape_is_checked_against_the_arm():
+    with pytest.raises(ValueError, match="warm start has shape"):
+        optimize_fixed("N", [1995], evals=1, seed=0, prices=average(),
+                       no3_price=0.0, max_n=None, x0=np.zeros(3))
+
+
+def test_exp4_refuses_to_compose_across_different_worlds():
+    """Warm-starting from an Exp 2 optimum found under another cap or price composes two
+    different experiments while reporting one."""
+    from swat_gym.experiments.exp4_joint import _check_world
+    d = {"max_n": 400.0, "no3_price": 0.0}
+    _check_world(Path("exp2_nitrogen.json"), d, 400.0, 0.0)          # same world: fine
+    with pytest.raises(SystemExit, match="different problem"):
+        _check_world(Path("exp2_nitrogen.json"), d, None, 0.0)
+    with pytest.raises(SystemExit, match="different problem"):
+        _check_world(Path("exp2_nitrogen.json"), d, 400.0, 8.0)
+
+
+def test_exp4_requires_three_ppo_seeds():
+    """Rule 3: never a single-seed Exp 4 headline."""
+    from swat_gym.experiments import exp4_joint
+    with pytest.raises(SystemExit, match="rule 3"):
+        exp4_joint.main(["--budget", "10", "--max-n", "none", "--ppo-seeds", "1"])
