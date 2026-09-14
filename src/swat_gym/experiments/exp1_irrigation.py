@@ -30,6 +30,7 @@ from ..monthly_env import EPISODE_STEPS, MonthlySwatEnv
 from ..rewarders import average
 from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage
 from ._focused import (ROOT, _cfg_key, _load_stage, _row, _save_stage, _stage,
+                       model_digest,
                        _water_breakeven, mean, paired, score_measured)
 from ._optimize import minimise
 
@@ -168,7 +169,7 @@ def main(argv=None) -> dict:
                     help="$/kg N on leached nitrate. A swept axis, not a shadow price: "
                          "report the whole frontier with the 0 arm alongside")
     ap.add_argument("--water-price", type=float, default=None,
-                    help="$/mm/ha override for the placeholder DEFAULT_WATER")
+                    help="$/mm/ha override for DEFAULT_WATER (sourced composite)")
     ap.add_argument("--skip-ppo", action="store_true",
                     help="open-loop CMA only (use after a failed ceiling gate)")
     ap.add_argument("--out", type=Path, default=OUT)
@@ -194,7 +195,11 @@ def main(argv=None) -> dict:
            # The observation filter and exploration scale change what is learned, so they key
            # the artefacts too — a raw-observation policy must not resume into a normalised run.
            "normalise_obs": NORMALISE_OBS, "log_std_init": LOG_STD_INIT,
-           "default_plan": _cfg_key({"p": DEFAULT_PLAN.round(6).tolist()})}
+           "default_plan": _cfg_key({"p": DEFAULT_PLAN.round(6).tolist()}),
+           # The calibrated model is part of the objective too. Without this a recalibration
+           # resumes the previous model's plan and policies and re-scores them, which reports a
+           # search that never happened — see ``_focused.model_digest``.
+           "model": model_digest()}
 
     print(f"Exp1 irrigation monthly  budget={args.budget}  "
           f"CMA evals={evals} × {len(train)} windows", flush=True)

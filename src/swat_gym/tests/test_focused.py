@@ -144,52 +144,22 @@ def test_the_cap_actually_binds_on_the_baseline():
     assert uncapped != capped, "if the cap were inert the composition rule would not matter"
 
 
-# -- rule 8: the Exp 4 warm start must reach the optimizer ----------------------------------
+# -- the CMA-ES search starts from measured practice, always ---------------------------------
 
-def test_optimize_fixed_starts_from_the_warm_start_it_is_given():
-    """A warm start that is computed and then dropped makes rule 8 unreadable.
-
-    ``exp4_joint`` built the composed single-lever optimum, recorded ``"warm_start": true`` and
-    passed nothing to ``run()``. The search began cold; "joint < composed" then said something
-    about the budget rather than about lever interactions, and the artefact gave no way to tell.
-    """
+def test_optimize_fixed_starts_from_the_arm_default():
+    """With Exp 4 cut (2026-09-09) there is no warm start: every search begins at measured
+    practice on the arm's own dimensions. This pins that the start point is not silently
+    something else — the failure the old warm-start test guarded, in its surviving form."""
     seen = []
 
     def fake_minimise(fn, x0, **kw):
         seen.append(np.asarray(x0, dtype=float).copy())
         return np.asarray(x0, dtype=float), 0, []
 
-    warm = np.clip(default_free("N") + 0.05, 0.0, 1.0)
     with mock.patch("swat_gym.experiments._focused.minimise", fake_minimise):
         optimize_fixed("N", [1995], evals=1, seed=0, prices=average(),
-                       no3_price=0.0, max_n=None, x0=warm)
-        optimize_fixed("N", [1995], evals=1, seed=0, prices=average(),
                        no3_price=0.0, max_n=None)
-    assert np.allclose(seen[0], warm), "warm start did not reach the optimizer"
-    assert np.allclose(seen[1], default_free("N")), "cold start should use the arm default"
-    assert not np.allclose(seen[0], seen[1])
-
-
-def test_warm_start_shape_is_checked_against_the_arm():
-    with pytest.raises(ValueError, match="warm start has shape"):
-        optimize_fixed("N", [1995], evals=1, seed=0, prices=average(),
-                       no3_price=0.0, max_n=None, x0=np.zeros(3))
-
-
-def test_exp4_refuses_to_compose_across_different_worlds():
-    """Warm-starting from an Exp 2 optimum found under another cap or price composes two
-    different experiments while reporting one."""
-    from swat_gym.experiments.exp4_joint import _check_world
-    d = {"max_n": 400.0, "no3_price": 0.0}
-    _check_world(Path("exp2_nitrogen.json"), d, 400.0, 0.0)          # same world: fine
-    with pytest.raises(SystemExit, match="different problem"):
-        _check_world(Path("exp2_nitrogen.json"), d, None, 0.0)
-    with pytest.raises(SystemExit, match="different problem"):
-        _check_world(Path("exp2_nitrogen.json"), d, 400.0, 8.0)
-
-
-def test_exp4_requires_three_ppo_seeds():
-    """Rule 3: never a single-seed Exp 4 headline."""
-    from swat_gym.experiments import exp4_joint
-    with pytest.raises(SystemExit, match="rule 3"):
-        exp4_joint.main(["--budget", "10", "--max-n", "none", "--ppo-seeds", "1"])
+        optimize_fixed("I", [1995], evals=1, seed=0, prices=average(),
+                       no3_price=0.0, max_n=None)
+    assert np.allclose(seen[0], default_free("N"))
+    assert np.allclose(seen[1], default_free("I"))

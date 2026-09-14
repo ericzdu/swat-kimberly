@@ -888,6 +888,85 @@ Nine move within a **±30 % window around the site's own calibrated table** — 
 `lai_pot` for each crop, and the three `harv.ops` harvest indices. Five had no source value at
 all: `alfa.lai_min`, `corn`/`barl.days_mat`, `epco`, `orgn_min`.
 
+> ⚠️ **That last sentence is wrong about `epco`, and the error is load-bearing.** `epco` = 0.50
+> **matches REF `000140001.hru` exactly** — this same document says so above, in the port audit:
+> "`esco` (0.95) and `epco` (0.50) turn out to **already match** REF `000140001.hru` exactly".
+> It is a sourced value, so under rule 11 it was never eligible for the free set, and the
+> contradiction between these two sections is what let it in. Corrected 2026-09-10; `epco` is
+> out of `PARAMS` and back at 0.50. The sourceless set is **four**: `alfa.lai_min`,
+> `corn`/`barl.days_mat`, `orgn_min`.
+
+### The 2026-09-10 refit — what the five sourceless values were actually worth
+
+The fit above was applied on 2026-07-31. Rule 11b then reverted its nine crop coefficients
+(2026-08-07, completed 2026-08-28), leaving **five parameters on disk whose only justification
+was a fit run against crop coefficients that no longer exist**. They were neither sourced nor
+the argmin of any objective the current model can evaluate — orphans, carried for six weeks
+because `check_param_state.py` explicitly waves the optimizer-owned set through as "reported,
+not checked". Refitting them against the workbook crops answered what they were worth, and the
+answer is that **four of the five should never have been free**:
+
+| parameter | July fit | now | why |
+|---|---|---|---|
+| `epco` | 0.59394 | **0.50** | sourced (REF); and unidentified — see below |
+| `corn.days_mat` | 97 | **120** | unidentified: score flat 110→130 (1991.1 / 1992.1 / 1995.9) |
+| `barl.days_mat` | 107 | **105** | pins at its 90-day floor; makes *per-crop* barley bias worse (+2.4 at 105 vs −6.1 at 90) |
+| `alfa.lai_min` | 1.01216 | **1.75** | inert: 1.01216 → 1.75 moves the score by zero to 5 s.f. |
+| `orgn_min` | 0.0008 | **0.00091** | the one genuinely identified parameter; refit |
+
+**`epco` is a compensator, not a parameter, and the measurement says so.** It improves
+monotonically to the smallest value tested and never turns over:
+
+Measured on the **shipped** model, one parameter at a time, reproducible with
+`uv run python scripts/verify_model_state.py --sweeps`:
+
+| `epco` | SCORE | yield RMS | corn | alfalfa | barley | perc mm/yr |
+|---|---|---|---|---|---|---|
+| 0.01 | 1442.9 | 30.38 | −15.2 | **+24.7** | −1.8 | 36.1 |
+| 0.05 | 1567.3 | 33.18 | −14.6 | +33.3 | −0.7 | 28.0 |
+| 0.10 (its old lower bound) | 1692.3 | 35.60 | −13.9 | +39.0 | +0.2 | 19.4 |
+| **0.50 (sourced, shipped)** | **1992.1** | **40.36** | **−12.1** | **+49.2** | **+2.4** | **1.8** |
+| 1.00 | 2076.4 | 41.63 | −12.2 | +51.6 | +2.6 | 2.3 |
+
+What it is absorbing is **alfalfa's workbook over-prediction** — the +49 % that rule 11b exists
+to keep visible. Fitting `epco` is fitting `alfa.bm_e` through a side door, and it would have
+been invisible, because nothing in the artefact names alfalfa. It also **manufactures the
+leaching column**: percolation is 19.9 mm/yr at `epco` 0.10 against 1.9 at the sourced 0.50, so
+an unidentified parameter would have been setting the entire sustainability channel that rule 1
+governs. Both reasons are independently sufficient. It is held at 0.50.
+
+**What the refit actually recovered was the corn bias, and it came from one number.** On the
+shipped model the same sweep isolates it: `corn.days_mat` = 97 gives corn **−24.2 %**, and 120
+gives **−12.1 %**, every other parameter held. The figure PROVENANCE
+and rule 11b had been booking as the accepted price of the workbook reversion was roughly half
+stale fit, not workbook.
+
+**`orgn_min`, and a coincidence to state explicitly so nobody reads it as rule 12 being
+violated.** Refit against this objective it lands at **0.00091** — numerically almost the
+SWAT2012-borrowed 0.001 that rule 12 forbids carrying across, but arrived at independently, from
+the nitrate-trajectory term rather than from a SWAT2012 mineralisation sweep. The measured
+target is still out of reach and rule 12's diagnosis still holds: at the applied 0.00091 humus
+mineralisation is **51.5 kg N/ha/yr against the measured 209.8** (55.6 at 0.0010), and pushing
+`orgn_min` to its 0.0060 bound reaches only 150.4 while collapsing fixation 221 → 148 kg N/ha/yr —
+§5i's substitution, priced. The parameter is also weakly identified: the score is 1995.5 / 1992.6 /
+1999.9 at 0.0008 / 0.0010 / 0.0012.
+
+**The shipped model, `scripts/calib_report.py`, 2026-09-10:**
+
+| | on disk 2026-08-28 | **shipped 2026-09-10** |
+|---|---|---|
+| yield, RMS per-year | 42.3 % | **40.4 %** |
+| yield, PBIAS | +9.3 % | +14.6 % |
+| corn / alfalfa / barley | −24.6 / +49.5 / +3.9 | **−12.1 / +49.2 / +2.4** |
+| PET vs measured ETos | +0.0 % | +0.0 % |
+| soil-nitrate RMS | 90.9 kg/ha | 93.9 kg/ha |
+| percolation | 1.2 mm/yr | 1.8 mm/yr |
+
+Two things must be quoted with it. **Barley's +2.4 % is cancellation**, not agreement: the two
+measured years are **+52.4 % (2014) and −31.2 % (2019)**. And **alfalfa stays at +49.2 %** by
+design — that is rule 11b's bias left legible rather than fitted away, and every yield-dependent
+level in the paper carries it.
+
 **Two parameters the fit moved were held back at their sourced values, and the model is better
 for it.** `n_perc` optimized to 0.9935 against REF's 0.20 and `fr_hum_act` to its floor; both
 were buying ~6 kg/ha on the nitrate term while making yield *worse*. Held at 0.20 and 0.02, the

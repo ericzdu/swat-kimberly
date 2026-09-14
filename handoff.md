@@ -157,12 +157,12 @@ uv run python -m swat_gym.experiments.exp1_controller --budget 5000
 
 # production (after ceiling gate_pass)
 uv run python -m swat_gym.experiments.exp1_irrigation --budget 300000 --ppo-seeds 3
-uv run python -m swat_gym.experiments.exp2_nitrogen --budget 300000
-uv run python -m swat_gym.experiments.exp3_rotation
-uv run python -m swat_gym.experiments.exp4_joint --budget 300000 --ppo-seeds 3
+uv run python -m swat_gym.experiments.exp2_nitrogen --budget 300000 --max-n none
 ```
 
-Suggested node map (from `EXPERIMENTS.md`): Exp 1 seeds on one node → Exp 2 / Exp 3 in parallel → Exp 4.
+Suggested node map (from `EXPERIMENTS.md`): Exp 1 seeds on one node → Exp 2 on another.
+
+**Scope cut 2026-09-09:** `exp3_rotation` and `exp4_joint` are retired — see `CLAUDE.md`.
 
 `--budget` = matched **engine runs** (PPO timesteps; CMA evals = budget / n_train_windows).
 

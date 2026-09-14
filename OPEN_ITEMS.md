@@ -7,7 +7,22 @@ Working checklist for PAPER.md. Not part of the manuscript.
    in Section 1.1 are presently cited from a summary rather than the paper.
 3. Replace the population and snowpack claims in Section 1.1 with primary citations — the Census
    release and a peer-reviewed streamflow-timing source.
-4. Source the water and manure haulage prices. Section 3.4 shows the water price is load-bearing.
+4. ~~Source the water price.~~ **Closed 2026-09-14.** `DEFAULT_WATER` is now a sourced
+   composite, $0.43/mm/ha: WD01 2025 rental pool common-pool Tier 1 above Milner ($29.00/af
+   all-in → $0.235) plus sprinkler pumping on Idaho Power Schedule 24 (6.7222 ¢/kWh + $16.50/kW;
+   45 m head, 0.65 efficiency, 0.6 load factor **assumed**, → $0.198). Sourced range $0.235–0.64
+   (`rewarders.WATER_PRICE_RANGE`). TFCC's own assessment is flat per share (~$27/acre/yr from
+   the 990) and therefore not marginal. The old $0.41 placeholder sat inside the range, so
+   nothing scored before today moves materially. What would tighten it: the actual pump head
+   and motor size at the site, which would replace the two assumptions with measurements.
+   **Manure and the application pass sourced 2026-09-14** (`rewarders.py`, `paper/refs.bib`):
+   manure haul-and-spread $7.94/Mg from ISU *2026 Iowa Farm Custom Rate Survey* (A3-10, $7.20/ton,
+   n = 7); application pass $37.07/ha from U of I BUL 1078 *Custom Rates for Idaho Agricultural
+   Operations: 2025* ($15.00/acre, **n = 1**; Iowa $8.15/acre, n = 59, is the lower end — report
+   the breakeven wherever the split count is load-bearing). Both replaced $5 defaults, so any
+   Exp 2 artefact dated before 2026-09-14 was priced in a different world. Water remains the
+   one placeholder: the field is in the Twin Falls Canal Company service area, so the number to
+   get is TFCC's per-share assessment converted to $/acre-ft.
 5. Trace the provenance of the GRACEnet nitrogen-uptake figures: 2015 alfalfa reads 147 kg ha⁻¹
    against 607–667 from both models, suggesting the quantity is not comparable and should not be
    used as a target until resolved.
@@ -16,16 +31,35 @@ Working checklist for PAPER.md. Not part of the manuscript.
    Under rev 62 with `pet_co` calibrated to measured ETos the gap has changed sign and grown:
    actual ET is now **+17 %** against the reference model (835 vs 711 mm). See #11.
 8. Confirm co-authors and affiliations.
-9. Full cluster runs for Exp 1–4 at production budgets (see EXPERIMENTS.md / CLAUDE.md).
-   **2026-08-28: `runs/exp1_ceiling.json` is not on disk.** The +836 ± 68 quoted below and in
-   PAPER.md §6.2 has no surviving artefact — `runs/` is gitignored and only
-   `exp1_ceiling_smoke.json` (+45, `gate_pass: false`, tiny budget) remains. The figure is
-   currently unreproducible and must be regenerated before it is quoted; its ± was also a naive
-   SE, which rule 7 no longer permits (re-run it and quote `se_ess`).
-   Foresight gate at full budget, uncapped, 2026-08-06: **+836 ± 68 $/ha** on test
-   (`runs/exp1_ceiling.json`), well clear of the 250 noise floor — proceed to PPO is
-   justified, and a null for closed-loop control cannot be blamed on there being nothing
-   to adapt to. (Superseded: the old +2,042 smoke figure, and the +713 capped figure.)
+9. Full cluster runs for **Exp 1–2** at production budgets (see EXPERIMENTS.md / CLAUDE.md).
+   Scope reduced from Exp 1–4 on 2026-09-09; Exp 3/4 are cut.
+
+   ~~2026-08-28: `runs/exp1_ceiling.json` is not on disk.~~ **Corrected 2026-09-09 — that claim
+   was wrong, and stale by about six hours.** The gate was re-run at full budget after the rule
+   11b reconciliation and the artefact has been on disk since **2026-08-28 18:34**. Verified
+   this session by reading the file directly:
+
+   | key | value |
+   |---|---|
+   | `gate_pass` | **true** |
+   | `foresight_test` | **+721.5 $/ha** |
+   | `se_ess` (the one to quote) | 278.8 |
+   | `se_naive` (ratio only) | 139.4 |
+   | `ci95_boot` | [502.9, 999.1] |
+   | `ci95_ess` | [175.0, 1268.0] |
+   | `n` / `ess` | 5 / 1.25 |
+   | per-window | 1191.8 / 455.8 / 539.8 / 531.6 / 888.6 |
+   | `noise_floor` | 250.0 |
+
+   **What to quote, and the caveat that goes with it.** The point estimate (+721.5) and the
+   bootstrap interval both clear the 250 noise floor, so proceeding to PPO is justified and a
+   null for closed-loop control cannot be blamed on there being nothing to adapt to — the
+   original purpose of this gate is satisfied. But the **ESS interval's lower bound is 175**,
+   below the floor. Quote the interval, never the point alone. Anyone writing this up should
+   say "foresight is worth +721 $/ha (95 % ESS CI 175–1268)" and not "+721 ± 139".
+
+   Superseded figures, none of which may be cited: **+836 ± 68** (2026-08-06 — naive SE, and
+   pre-reconciliation), +2,042 (smoke), +713 (capped).
 10. ~~**SWAT+ rev 62.0.0 port (2026-07-31):**~~ **Closed 2026-07-31.** Inputs reconciled
     against REF HRU `000140001` (`scripts/port_reference_params.py`, PROVENANCE §5g) and the
     provisional `pet_co = 0.81` replaced by **0.964**, calibrated against measured AgriMet
@@ -147,8 +181,16 @@ submission.
   1 ha field.
 
 
-13. **Methodology fixes applied 2026-08-28** (all pinned by tests in `test_focused.py`):
-    - `exp4_joint` computed a composed warm start, recorded `"warm_start": true`, and passed
+13. **Methodology fixes applied 2026-08-28** (all pinned by tests in `test_focused.py`).
+
+    > **Scope note, 2026-09-09.** Three of these five fixes were in code that has since been cut
+    > with Exp 3/4 (marked ⟨retired⟩ below). They are kept in full because each records a
+    > *class* of defect, not just an instance — a warm start that is recorded but never passed,
+    > a constraint applied on one code path and not another, a winner ranked at one price and
+    > never re-selected. If any lever is ever restored, these are the traps to re-check first.
+    > The two unmarked fixes remain fully live.
+
+    - ⟨retired with Exp 4⟩ `exp4_joint` computed a composed warm start, recorded `"warm_start": true`, and passed
       nothing to the optimizer — `run()` took no start point. The search ran cold while the
       artefact claimed otherwise, which is precisely the reading rule 8 depends on. `run()` now
       takes `x0`, threads it into CMA-ES, and puts it in the checkpoint key so a cold partial
@@ -158,14 +200,20 @@ submission.
       Exp 3/4 were simulating a different fertiliser regime from Exp 1's baseline and composing
       them would have repeated the capped/uncapped class of error one level up. The flag is now
       required, recorded in every artefact, and checked before Exp 4 warm-starts.
+      **Still live 2026-09-09 in narrowed form:** the Exp 4 warm-start check went with Exp 4,
+      but the flag is still required and still recorded, and it must still match between Exp 1
+      (uncapped) and Exp 2 — see hard rule 2 as narrowed.
     - Reported uncertainty was `sd/√5` over the five overlapping test windows, which rule 7
       forbids. `paired()` now returns `se_ess` (ESS = 1.25 from `windows.effective_n`),
       `se_naive`, a deterministic percentile bootstrap CI and an ESS-normal CI, and no longer
       has a key called `se`.
-    - Exp 3 ranked rotations on a scalar profit at λ_n = 0, so the winner could be re-scored
+    - ⟨retired with Exp 3⟩ Exp 3 ranked rotations on a scalar profit at λ_n = 0, so the winner could be re-scored
       but never re-selected at another nitrate price. Each sequence now stores its separable
       train means, and the artefact carries a `no3_frontier` — the winning rotation at every λ
       in the grid, exact, with no extra engine runs.
+      *The principle generalises and still binds:* re-**scoring** a fixed winner across λ is not
+      the same as re-**selecting** the winner at each λ, and only the latter gives a true
+      frontier. Any future arm selected under a scalar must store its separable terms.
     - `rerun_exp1.sh` re-ran the λ_n-independent foresight gate for every frontier point, and
       left "do not start PPO if the gate fails" to the operator. It now reuses one gate and
       exits 2 on `gate_pass: false` unless `FORCE_PPO=1`.
@@ -212,3 +260,93 @@ submission.
     benchmark, decomposed as above, reported as a quantified limitation. The benchmark is 21
     *different* Magic Valley fields in 2020–22 with its own 10–20 % field-scale uncertainty, so
     it bounds the bias rather than validating this field.
+
+16. **`adaptivity_value` is not resolvable at three seeds — do not quote its mean.**
+    Found 2026-09-09 reading `runs/exp1_irrigation.json` directly. The artefact reports
+    `across_seeds.adaptivity_value.mean = +149.8`, but the per-seed values are:
+
+    | seed | `adaptivity_value` | `advantage_over_fixed` |
+    |---|---|---|
+    | 0 | **−96.4** | −328.7 |
+    | 100 | **−344.1** | −632.2 |
+    | 200 | **+890.1** | −193.8 |
+    | mean | +149.8 | −384.9 |
+
+    The mean is positive **only because of seed 200**; two of three seeds are negative and the
+    sign is not stable. Quoting +149.8 as "the adaptivity value" would be the same class of
+    error hard rule 7 was written to prevent — a number whose apparent precision is an artefact
+    of how it was aggregated. Report it as **unresolvable at three seeds**, which is itself a
+    legitimate finding and one that reinforces the null.
+
+    **`advantage_over_fixed` does not have this problem** and should be stated firmly: all three
+    seeds agree in sign, all three are negative, mean **−384.9 $/ha**. PPO loses to
+    matched-budget open-loop CMA. Hard rule 3 now carries the general form of this distinction.
+
+    Action: whoever writes §6 must not average the adaptivity decomposition across seeds. If a
+    resolved number is wanted, it needs more seeds, and the seed count needed should be
+    estimated from the spread above before any cluster time is committed.
+
+17. **Manuscript sections for Exp 3/4 must come out** (scope cut 2026-09-09).
+    Rotation and joint search are cut; `CLAUDE.md` Goal and `EXPERIMENTS.md` carry the full
+    rationale. `PAPER.md` still needs: the Exp 3/4 result sections removed, the "levers in
+    order" framing in §1/§3 reduced to two, Table numbering resequenced, and the abstract's
+    `[TODO: headline finding]` filled with the Exp 1 result (see #16 for what may and may not
+    be stated). Check §3.5, §6, and §7 future-work — rotation belongs in future work now, not
+    in results.
+
+18. **The model was refit 2026-09-10; every downstream artefact predates it.**
+    Five parameters (`alfa.lai_min`, `corn`/`barl.days_mat`, `epco`, `orgn_min`) were left on
+    disk by the 2026-07-31 fit and orphaned when rule 11b reverted that fit's nine crop
+    coefficients. Four should never have been free — `epco` is REF-sourced *and* unidentified,
+    the two `days_mat` are unidentified or bound-pinned, `alfa.lai_min` is inert. Full accounting
+    and the measurements in **PROVENANCE §6**. `PARAMS` is now three nitrogen-cycle knobs, of
+    which two are held; `alfa.lai_min` is pinned in `port_crops.OVERRIDES` and *asserted* by
+    `check_param_state.py` rather than reported.
+
+    **Consequence, and it is the whole point of doing this before the production runs:**
+    `runs/exp1_ceiling.json` (2026-08-28), `runs/exp1_controller.json` and the three
+    `runs/exp1_irrigation_ppo_s*` seeds (2026-08-29) were all produced on the pre-refit model.
+    They are **stale and must be re-run** — gate → ceiling → controller → Exp 1 → Exp 2, in
+    paper order. Nothing downstream may be quoted until then, including the Exp 1 numbers in #16.
+    The pre-refit copies are preserved in `runs/archive/pre_refit_20260910/`.
+
+    **Ceiling gate re-run 2026-09-11 and it passes.** Foresight **+360.8 $/ha** on test,
+    `se_ess` 71.8, `ci95_boot` [293.4, 424.3], `ci95_ess` [220.0, 501.6], per-window
+    462.1 / 352.4 / 238.6 / 383.2 / 367.8, n = 5, ESS 1.25, `gate_pass: true`. The ESS lower
+    bound is **220, still below the 250 floor** — quote the interval, never the point. This
+    supersedes the +721.5 figure in #9, which must not be cited.
+
+    **The stale parameters had inflated this gate by roughly half** (+721.5, `se_ess` 278.8,
+    per-window spread 456–1,192). The corrected model offers a foresight optimizer materially
+    less to exploit, and does so far more consistently — the standard error falls by nearly 4×,
+    the per-window spread from 736 to 224. That direction is what makes the re-run necessary
+    rather than cosmetic: the earlier figure **overstated the headroom Exp 1's null is measured
+    against**, so a null that looked like "PPO failed to capture a large opportunity" is in fact
+    measured against a smaller one.
+
+    Remaining in the chain: controller → Exp 1 → Exp 2.
+
+    What is *not* at risk: those results are paired differences between arms sharing one
+    environment, so a parameter shift is common-mode and the signs should survive. The null in
+    #16 (`advantage_over_fixed` negative on all three seeds) is the kind of claim that survives
+    this; the $/ha levels are not.
+
+    Two defects in `scripts/calibrate/optimize.py` were found and fixed doing this, both of the
+    hard-rule-2 class — a difference between what was simulated and what the artefact says:
+    - `--hold` matched on a name that silently never fired (`fr_hum_act` against a `Param.name`
+      of `soilnut1.fr_hum_act`), so a report-only run printed numbers for a parameter the
+      operator believed was held, and only a later `--apply` revealed it. Now validated before
+      the search, with the known names printed.
+    - `--hold` fit every parameter freely and substituted the sourced value only at write time,
+      so the free parameters landed on an optimum conditional on a held parameter's *fitted*
+      value. Measured: that produced an applied score of 1999.2 against a start of 1995.5 — the
+      "fit" made the model worse — where the true conditional optimum is 1992.1. `--hold` now
+      excludes from the search, and the scored set is exactly the written set.
+
+19. **`runs/` is gitignored except two files, so an `--apply` can destroy the only record of the
+    previous fit.** `runs/calibration.json` was overwritten by the 2026-09-10 refit; the July
+    fit survives only because it was copied to
+    `runs/archive/calibration_2026-07-31_prereconciliation.json` first. Either track
+    `runs/calibration.json` the way `exp1b_price_ratio.json` and `exp1c_cadence_e500.json` are
+    re-included by `.gitignore`, or make `optimize.py --apply` refuse to overwrite an existing
+    `--out` without an explicit flag. Currently neither is true.

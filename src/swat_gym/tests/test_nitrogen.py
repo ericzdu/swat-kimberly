@@ -109,7 +109,10 @@ def test_n_arm_owns_both_sources_and_nothing_else():
     # manure rate/day/source + two mineral (rate, day) pairs
     assert set(ARMS["N"]) == {3, 4, 5, 6, 7, 8, 9}
     assert not set(ARMS["N"]) & set(ARMS["I"]), "N and I must not share dimensions"
-    assert not set(ARMS["N"]) & set(ARMS["R"])
+    # Crop dimensions 0-2 are still decoded (the rotation is simulated) but belong to no arm,
+    # so no experiment can move them — that is what makes the alfalfa bias common-mode.
+    assert not set(ARMS["N"]) & {0, 1, 2}
+    assert not set(ARMS["I"]) & {0, 1, 2}
 
 
 def test_mineral_range_reaches_the_cap():

@@ -76,14 +76,14 @@ repeating 2012's operations in 2020; that fabricated year is not simulated here 
 
 ## `swat-gym` — the environment
 
-The RL layer: an agent controlling irrigation, manure/N, and rotation, with the calibrated
+The RL layer: an agent controlling irrigation and manure/N, with the calibrated
 SWAT+ model supplying the dynamics. Calibration quality is what makes this layer worth
 running, which is why most of this README is about the model rather than the agent — and why
 the residual per-crop error is reported below in the terms an agent will exploit. Plan,
 staging, and the open questions: `EXPERIMENTS.md`.
 
 **Phases 0-3 built (2026-07-29).** `schedule.py` turns an action vector into `management.sch`
-and `irr.ops`; `constrainers.py` projects infeasible rotations onto feasible ones;
+and `irr.ops`; `constrainers.py` projects infeasible plans onto feasible ones;
 `rewarders.py` prices the outcome from USDA NASS Idaho figures with the leaching term kept
 separable; `env.py` exposes both an open-loop `evaluate()` and an annual-replay `SwatEnv` with a
 `gymnasium` adapter. `port_agrimet.py` now writes **1995-2025**, so an episode samples an 8-year
@@ -312,6 +312,13 @@ agent would ignore; it is a *relative price* between the crops the agent chooses
 rotation lever would learn to prefer alfalfa for reasons that are model error. Irrigation and
 manure levers are less exposed, since their bias is within-crop. Until the per-crop gap closes,
 results stay relative to the model's own baseline (see the guardrail in `EXPERIMENTS.md`).
+
+> **This paragraph is why the rotation lever was cut on 2026-09-09.** The reasoning above
+> predates the decision by weeks and was never answered: the crop bias is a *relative price*
+> among the crops a rotation lever chooses between, so that lever reads a corrupted ratio.
+> Holding the rotation fixed makes the bias **common-mode** across every arm compared instead
+> of **differential** between them. Levels still carry it; differences no longer do. Scope is
+> now two levers — irrigation (Exp 1) and nitrogen (Exp 2). See `CLAUDE.md`.
 
 **A fitted parameter set is now applied** (`runs/calibration.json`,
 `scripts/calibrate/optimize.py`; full accounting in PROVENANCE §6). Two of its sixteen

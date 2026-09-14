@@ -1,0 +1,1005 @@
+%% Information Processing in Agriculture (Elsevier, ISSN 2214-3173)
+%% The journal mandates no specific class; this uses Elsevier's CAS single-column
+%% template, which is what the guide-for-authors points at. See templates/.
+%%
+%% Compile:  latexmk -pdf main.tex
+%% Requires: templates/els-cas-templates/{cas-sc.cls,cas-common.sty} on TEXINPUTS,
+%%           cas-sc.cls and cas-common.sty are copied beside this file already.
+
+\documentclass[a4paper,fleqn]{cas-sc}
+
+% IPA prints numbered references.
+\usepackage[numbers]{natbib}
+
+% Draft scaffolding -- delete both before submission.
+\usepackage{xcolor}
+\newcommand{\todo}[1]{\textcolor{BrickRed}{\textbf{[TODO:}~#1\textbf{]}}}
+
+\newtheorem{theorem}{Proposition}
+\newproof{pf}{Proof}
+
+\begin{document}
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{Profit and nitrate together: an RL environment on official SWAT+}
+\shortauthors{E. Du et al.}
+
+\title[mode=title]{Profit and nitrate together: a reinforcement-learning environment
+on official SWAT+, and a protocol for telling search from adaptation}
+
+\author[1]{Eric Du}[orcid=0000-0000-0000-0000]
+\cormark[1]
+\ead{ericdu.awesome@gmail.com}
+\credit{Conceptualization, Methodology, Software, Formal analysis, Writing -- original draft}
+
+% TODO: fill in -- plain text here on purpose, CAS re-processes these tokens
+% and colour macros inside them can break the frontmatter build.
+\affiliation[1]{organization={Department},
+            addressline={Street},
+            city={City},
+            postcode={00000},
+            state={State},
+            country={Country}}
+
+% \todo{co-authors and affiliations to confirm} -- add \author[2]{} blocks here,
+% each with its own \credit{} statement (CRediT is required by the journal).
+
+\cortext[1]{Corresponding author}
+
+% Journal limit: 250 words. Currently 225, leaving 25 for the headline finding.
+\begin{abstract}
+Southern Idaho's irrigated forage systems face two pressures at once: an
+over-appropriated aquifer, and dairy manure whose nitrogen is cheap to spread and
+costly once it reaches groundwater. Rainfall at Kimberly falls far short of crop
+demand, so nearly all water is applied by the grower, and the irrigation calendar is
+also the leaching calendar. Machine learning is often proposed for such decisions, but
+reported gains are hard to interpret: a learned schedule is usually compared against
+routine practice rather than a fixed schedule optimised as hard, and judged on profit
+alone, which leaves water and nitrate out of view.
+
+We ask whether a policy that responds to in-season conditions can raise profit without
+spending the gain on water and nitrate. Ours is the first reinforcement-learning stack
+to wrap the full SWAT+ engine, so water and nitrogen move through the same transport
+used in field studies rather than a crop model. Every method receives the same
+simulation budget and is evaluated on weather years withheld from training, which
+separates a policy that has genuinely adapted from one that was searched harder.
+Nitrate is never priced: strategies are compared along a profit--leaching frontier, so
+conclusions survive disagreement about what leaching is worth.
+% HEADLINE FINDING GOES HERE (25 words max): where each method's frontier lies.
+% Source: corrected runs/exp1_*.json
+Perfect foresight of the weather is worth $+361$~\$~ha$^{-1}$ at this site (95\,\% interval 220--502 on an effective sample of 1.25 test windows), which bounds what any adaptive policy can recover.
+Leaching is unvalidated here and ranks strategies within the model.
+\end{abstract}
+
+% Journal limit: 3-5 items, max 85 characters each (spaces included).
+\begin{highlights}
+\item First Gymnasium environment driven by the official SWAT+ engine on a measured field
+\item A protocol separating optimizer search from state-dependent policy adaptation
+\item Budgets matched in engine runs, with objective parity tested rather than assumed
+\item Nitrate is never priced: the whole profit-leaching frontier is reported instead
+\item Weather-specific scheduling is worth 836 \$/ha, so a null result is not vacuous
+\end{highlights}
+
+% Journal limit: 1-6 keywords, multi-word keywords discouraged.
+% Dropped from the manuscript list to meet the cap: sustainable intensification,
+% evaluation protocol, CMA-ES, dairy-forage systems.
+\begin{keywords}
+SWAT+ \sep reinforcement learning \sep irrigation \sep nitrogen \sep
+nitrate leaching \sep multi-objective optimization
+\end{keywords}
+
+\maketitle
+
+\section{Introduction}\label{sec:intro}
+
+Southern Idaho's irrigated forage systems face simultaneous pressure on water and
+nitrogen. At Kimberly, precipitation is far below potential evapotranspiration, so
+nearly all crop water is applied, while dairy manure supplies cheap nitrogen and
+elevates nitrate concern in groundwater. The two decisions couple through percolation:
+an irrigation schedule is also a leaching schedule. Models without hydrological
+transport cannot represent that coupling.
+
+What managers need is a strategy that performs well --- higher profit where the model
+is trustworthy, with resource use and leaching visible --- whether that strategy is a
+fixed calendar, a simple feedback rule, or a learned policy. Fixed calendars are easy
+to implement; state-dependent rules and reinforcement learning can in principle respond
+to mid-season conditions.
+
+Two problems make the existing evidence hard to read. First, \textbf{baselines are
+rarely matched}. A learned policy compared against a default schedule, or against a
+search given a fraction of the compute, will win for reasons that have nothing to do
+with adaptation. Establishing that a policy adapts requires a baseline that has been
+searched as hard as the policy was trained, on \emph{the same objective} --- and
+objective parity between two code paths is a property to be tested, not assumed.
+Second, \textbf{the objective is usually single-valued}. A profit-only reward makes
+water and nitrate invisible to the optimizer, so a policy can post a headline gain
+while applying more water and leaching more nitrogen than the practice it replaces.
+Whether such a policy is an improvement depends entirely on prices the study did not
+state.
+
+We therefore treat the \emph{protocol} as a first-class contribution rather than
+housekeeping, and report the resource consequences of every strategy alongside its
+profit.
+
+\subsection{Contributions}\label{sec:contributions}
+
+\begin{enumerate}
+\item \textbf{A Gymnasium environment driven by official SWAT+ rev 62.0.0} on
+practitioner \texttt{TxtInOut} inputs and a measured field --- to our knowledge the
+first. Strategies act through the same text management files and the same native water
+and nitrate routing used in field studies.
+\item \textbf{An evaluation protocol that separates search from adaptation}: budgets
+matched in engine runs rather than native units, verified objective parity across
+methods, year-disjoint weather windows, a perfect-foresight reference, a parametric
+feedback controller as a third policy class, and train-selected frozen plans as a
+control on state-dependence.
+\item \textbf{Profit as the optimized objective, sustainability as a second objective
+settled by a frontier rather than a price.} Profit is what the reward maximizes and
+what the headline reports. Nitrate and water are not annotations beneath it: each
+strategy is re-scored across a swept $\lambda_n$ and the whole profit--leaching
+frontier is published, with the profit-only arm always alongside, so no sustainability
+conclusion depends on a shadow price we would have to defend. Where a method's frontier
+lies wholly inside another's, that is a dominance result; where the frontiers cross, we
+report the crossing rather than choosing the $\lambda_n$ that favours our preferred arm.
+\item \textbf{A calibration statement that treats per-crop bias, and an unvalidated
+percolation pathway, as bounds on interpretation} rather than as caveats appended to a
+conclusion.
+\end{enumerate}
+
+\section{Related work}\label{sec:related}
+
+\textbf{Agricultural RL.} CropGym, gym-DSSAT, CyclesGym, WOFOSTGym and related
+environments wrap process-based crop models for sequential management
+\citep{overweg2021, gautron2022, turchetta2022}. Most emphasize crop physiology;
+hydrological nitrate transport is often missing or crude. The literature applying RL to
+agricultural simulators remains small --- on the order of a dozen papers --- so strong
+claims about when closed-loop policies beat fixed schedules are not yet well supported.
+Most report a single scalar reward, usually profit or yield, with resource use reported
+after the fact if at all.
+
+\textbf{SWATgym and SWAT+.} \citet{madondo2023} introduced SWATgym, an OpenAI Gym
+environment for joint fertilizer and irrigation management whose dynamics are a Python
+reimplementation modeled after classic SWAT \citep{arnold2012} --- not the shipped
+Fortran executable or a practitioner \texttt{TxtInOut} tree. SWATgym established that
+SWAT-style hydrology--crop coupling is a useful RL testbed; our contribution is
+complementary: wrap \textbf{official SWAT+} rev 62.0.0 so strategies act through the
+same text inputs and the engine's own water and nitrate routing. We are not aware of a
+prior Gymnasium environment driven by the SWAT+ engine (Table~\ref{tbl:envs}).
+
+\begin{table*}[t]
+\caption{Crop-management RL environments (selected).}\label{tbl:envs}
+\begin{tabular*}{\tblwidth}{@{}LLLLL@{}}
+\toprule
+Environment & Dynamics engine & Fertilizer / N & Irrigation & Hydrologic N routing \\
+\midrule
+CropGym \citep{overweg2021} & WOFOST / PCSE & \checkmark & --- & limited \\
+gym-DSSAT \citep{gautron2022} & DSSAT & \checkmark & \checkmark & crop-centric \\
+CyclesGym \citep{turchetta2022} & Cycles & \checkmark & \checkmark & limited \\
+SWATgym \citep{madondo2023} & Python reimplementation modeled after classic SWAT & \checkmark & \checkmark & as reimplemented \\
+\textbf{This work} & \textbf{Official SWAT+ rev 62.0.0} (\texttt{TxtInOut}) & \checkmark & \checkmark & \textbf{present in engine} (validation bounded, \S\ref{sec:calibration}) \\
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+Table~\ref{tbl:envs} states that routing is \emph{present in the engine}, not that it is
+validated at this site; \S\ref{sec:calibration} and \S\ref{sec:limitations} give the
+bound.
+
+\textbf{Comparison protocol.} Agricultural optimization and ML papers often report gains
+over weak baselines without equalizing search effort or publishing the full candidate
+set. Frozen plans --- a policy's train-selected schedule replayed without further
+conditioning --- appear occasionally as a diagnostic. We treat them as an object of
+study: a frozen plan is only a valid measure of adaptation if it is also a
+\emph{well-searched} schedule, and \S\ref{sec:protocol} explains why it usually is not.
+
+\section{Reinforcement-learning formulation}\label{sec:formulation}
+
+Constants below are the values used in the released code.
+
+\subsection{Decision problem}\label{sec:mdp}
+
+Management is a finite-horizon, undiscounted Markov decision process. An episode covers
+a seven-year rotation preceded by one spin-up year that \texttt{print.prt}'s
+\texttt{nyskip} discards, so a window spans eight calendar years. A step is one
+growing-season month, April--September, giving \textbf{42 steps per episode}
+(7 years $\times$ 6 months). The discount factor is $\gamma = 1$: the objective is total
+rotation profit over a fixed horizon, so discounting would distort it.
+
+\subsubsection{Closing the loop on a batch simulator}\label{sec:prefix-replay}
+
+The MDP above assumes an environment that can be advanced one step at a time. SWAT+
+cannot be: it is a batch executable, not a library. It reads a \texttt{TxtInOut}
+directory of text inputs, simulates the entire configured period, writes its output
+tables, and exits. There is no stepping API, no checkpoint-restart, and no point at
+which an action can be injected into a simulation already underway. Management is not
+an input \emph{stream} to SWAT+; it is part of the input \emph{file set}, fixed before
+the run begins. A naive wrapper therefore gets one action per process --- an eight-year
+management plan in, a scalar objective out --- which is an optimization problem, not an
+MDP.
+
+We recover the interaction loop by \textbf{prefix replay}. The environment owns the
+plan, not the engine. It holds the decision prefix as arrays --- per-month irrigation
+depth, per-month mineral N, per-year manure and crop --- initialised to the no-action
+state at \texttt{reset}. A step writes the new action into the slot for the current
+month, re-renders the \emph{whole} eight-year management from the updated arrays into
+\texttt{irrigation.ops}, \texttt{management.sch} and the rest, and re-runs the engine
+from the beginning. The observation is then read back out of the monthly output tables
+at the row for the month just decided, and the reward is the increment in cumulative
+profit that this run produces over the previous one. The agent's step boundary is real;
+the simulator's is not.
+
+\noindent\texttt{step($a_t$)} is therefore:
+
+\begin{enumerate}
+\item write $a_t$ into the plan at month $t$ (clipped by the remaining-N allowance where
+a cap applies);
+\item repair rotation feasibility over the whole plan, leaving already-simulated N
+applications alone;
+\item render plan $\rightarrow$ SWAT+ text inputs, set \texttt{time.sim} to the sampled
+weather window;
+\item run the engine over all eight years;
+\item read \texttt{hru\_wb\_mon} / \texttt{hru\_pw\_mon} at (year, month) $= t$ for the
+observation, and the annual tables for profit;
+\item return $r_t = (\Pi_t - \Pi_{t-1}) \cdot 10^{-3}$.
+\end{enumerate}
+
+\textbf{Why this is the same MDP, and not an approximation of one.} The construction is
+only sound if replaying a prefix yields what a pausable engine would have produced. That
+rests on two properties of SWAT+, which we state as assumptions because they are
+properties of the engine rather than of our code, and which the test suite checks rather
+than assumes:
+
+\begin{description}
+\item[(A1) Determinism.] Given a fixed input tree and weather window, the engine's
+output is a function of its inputs alone --- no sampling, no dependence on wall-clock or
+run order.
+\item[(A2) Causality in simulated time.] Output rows for month $m$ depend only on inputs
+dated at or before $m$. Management operations scheduled after $m$ cannot alter them.
+\end{description}
+
+\begin{theorem}\label{prop:prefix}
+Let $E(a_0 \ldots a_k)$ denote a run of the engine on the plan whose first $k+1$ monthly
+slots are filled and whose remaining slots hold the no-action default, and let
+$o_m(\cdot)$ be the observation channels read from the row for month $m$. Under (A1) and
+(A2), for every $t$ and every $m \leq t$,
+$o_m(E(a_0 \ldots a_t)) = o_m(E(a_0 \ldots a_m))$.
+\end{theorem}
+
+\begin{pf}
+Fix $m \leq t$. The two runs are given input trees that agree on every operation dated
+at or before month $m$; they differ only in slots $m+1 \ldots t$, which carry dates
+strictly after $m$. By (A2) the row for month $m$ is invariant to those slots, so both
+runs produce the same row for $m$; by (A1) they produce it identically rather than
+merely in distribution. \hfill$\square$
+\end{pf}
+
+The consequence is the one the protocol needs: the observation the agent received at
+step $m$ is never rewritten by anything it does later, so the trajectory
+$(o_0, a_0, r_0, o_1, \ldots)$ is exactly the trajectory a checkpoint-restart engine
+would have generated. The transition is Markov in the environment's own state --- plan
+prefix plus simulated soil state --- even though the engine is stateless between calls,
+and the per-step reward telescopes to rotation profit by construction.
+
+Both assumptions are load-bearing enough to test rather than assert. (A2) is checked
+directly by seeding the undecided tail of the plan with a large irrigation and requiring
+every earlier observation to be bit-identical to the unseeded run
+(\texttt{tests/test\_monthly.py::test\_undecided\_tail\_cannot\_change\_earlier\_observations});
+the row selection Proposition~\ref{prop:prefix} quantifies over is pinned by
+\texttt{test\_observation\_reads\_the\_decided\_month\_not\_the\_last\_row}, and its
+consequence --- that the hydrologic channels actually move within an episode --- by
+\texttt{test\_hydrologic\_channels\_vary\_within\_an\_episode}. The last of these is not
+decoration: a regression that made the observation constant would leave the agent
+conditioning on the clock alone, and every adaptation result in
+\S\ref{sec:adaptation} would be a foregone conclusion rather than a measurement.
+
+Two properties of this construction matter downstream, and are easy to get wrong:
+
+\begin{itemize}
+\item \textbf{The row read must be selected, not taken from the end of the table.}
+Because every step simulates all eight years, the monthly tables always end at December
+of the final year. Reading the last row returns a \emph{future} month, identical at every
+step --- which would both violate the no-foresight constraint below and flatten the
+hydrologic channels into constants, leaving the policy nothing to condition on but the
+clock. We select by (year, month); the spin-up year that \texttt{nyskip} discards is
+accounted for in that index.
+\item \textbf{The reward must be an increment, not a level.} Profit is only defined for
+a complete rotation, and step $t$'s run reports the whole eight years including the
+undecided tail. Taking differences makes the per-step reward the marginal value of the
+month just decided, and makes the undiscounted return over an episode equal to the final
+rotation profit, which is the quantity \S\ref{sec:reward} prices.
+\end{itemize}
+
+The cost of this design is that one step is one full simulation: an episode costs
+\textbf{42 engine runs}. This is the single most consequential implementation fact in
+the paper --- it is what makes budget matching meaningful across methods that otherwise
+count effort in incompatible units, and what makes evaluation expensive enough that
+sample efficiency matters.
+
+\subsection{Observation}\label{sec:observation}
+
+The observation is 13-dimensional, \texttt{float32}. All channels describe months
+already simulated (Table~\ref{tbl:obs}).
+
+\begin{table}[t]
+\caption{Observation channels and scalings.}\label{tbl:obs}
+\begin{tabular*}{\tblwidth}{@{}cLL@{}}
+\toprule
+\# & Channel & Scaling \\
+\midrule
+0 & Episode progress & $t/42$ \\
+1--3 & Current crop, one-hot (corn, barley, alfalfa) & --- \\
+4 & Alfalfa stand age & $/7$ \\
+5 & Soil water at end of the month just simulated (mm) & $/300$ \\
+6 & Nitrogen-stress days, month just simulated & $/50$ \\
+7 & Water-stress days, month just simulated & $/50$ \\
+8 & Precipitation, month just simulated (mm) & $/50$ \\
+9 & PET, month just simulated (mm) & $/200$ \\
+10 & Remaining annual N allowance & $/\mathrm{cap}$ \\
+11 & Month within season & $/6$ \\
+12 & Year within rotation & $/7$ \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+Divisors are order-of-magnitude scalings chosen to put channels near unit range, not
+statistical normalization from a data pass --- and that turned out to be insufficient on
+its own, which \S\ref{sec:ppo} treats as a finding rather than an implementation note.
+Hydrologic state comes from \texttt{hru\_wb\_mon}, stress from \texttt{hru\_pw\_mon}.
+
+\textbf{No future weather is observable.} The policy is a nowcast, not a forecast. This
+is deliberate and it is what makes the perfect-foresight reference in
+\S\ref{sec:protocol} a meaningful contrast rather than a trivial one: the gap between
+the two quantifies what anticipation would be worth to a manager who cannot anticipate.
+
+\subsection{Action}\label{sec:action}
+
+For the irrigation arm the action is a scalar in $[0,1]$, scaled by
+\texttt{MONTH\_DEPTH\_MAX} $= 200$~mm, giving the depth applied in the current month.
+Depths become SWAT+ management operations directly: one \texttt{irrm} operation per
+non-zero month, placed mid-month at day 15, or on the last day before harvest when
+day 15 falls at or after it, written to \texttt{irrigation.ops} with
+\texttt{IRR\_EFF} $= 1.0$.
+
+\textbf{Constraints are enforced by repair, not by reward penalty.} An infeasible plan
+--- a rotation violation, or nitrogen above a loading cap when one is imposed --- is
+rewritten to the nearest feasible plan before simulation. This keeps the reward
+interpretable as money, but it has a cost that \S\ref{sec:protocol} makes into a
+protocol requirement: repair silently changes what was requested, so a repair applied on
+one code path and not another changes the objective invisibly.
+
+Repair is therefore applied \emph{asymmetrically by design}, and the asymmetry is stated
+rather than inherited. Rotation feasibility is repaired over the whole plan, since it is
+a property of the sequence. A nitrogen cap is \textbf{not}: rewriting the whole plan each
+step would let month $t$ revise months already simulated and reported to the agent, so
+the cap instead enters as observation channel 10 (remaining annual allowance) and clips
+only the current month's application. The agent sees the constraint and acts inside it;
+the past is never rewritten. In the irrigation experiment the cap is disabled on every
+arm (\texttt{max\_n = None}), and the experiment-level scorers give it \textbf{no default
+value} --- it must be passed explicitly --- because a silent default once applied a
+400~kg~N~ha$^{-1}$ cap to the open-loop objective while the policy ran uncapped, which
+inverted the sign of the headline comparison.
+
+\subsection{Reward}\label{sec:reward}
+
+\textbf{The full reward function, in one place.} The scored quantity is rotation-total
+profit, in \$~ha$^{-1}$ over the seven scored years:
+
+\begin{equation}\label{eq:profit}
+\Pi(\lambda_n) = \sum_c Y_c \, p_c - \mathrm{mm_{irr}} \, p_w - \mathrm{Mg_{man}} \, p_m
+- \mathrm{kg_N} \, p_N - n_\mathrm{events} \, p_\mathrm{op} - \lambda_n \, \mathrm{NO_3}
+\end{equation}
+
+Every term is read from a completed engine run rather than assumed
+(Table~\ref{tbl:terms}).
+
+\begin{table*}[t]
+\caption{Profit terms, their engine sources, and their prices (\S\ref{sec:prices}).}\label{tbl:terms}
+\begin{tabular*}{\tblwidth}{@{}LLLL@{}}
+\toprule
+Term & Symbol & Source & Price \\
+\midrule
+Crop revenue & $\sum_c Y_c p_c$ & \texttt{basin\_crop\_yld\_yr}, Mg DM by plant name & \$/Mg DM, NASS 2022--24 mean \citep{nass2024} \\
+Irrigation & $\mathrm{mm_{irr}} p_w$ & \texttt{hru\_wb\_yr.irr} & \$0.43~mm$^{-1}$~ha$^{-1}$ \citep{wd01_2025,idahopower_sched24} \\
+Manure & $\mathrm{Mg_{man}} p_m$ & \texttt{management.sch} fert ops, manure products & \$7.94~Mg$^{-1}$ \citep{isu_custom_2026} \\
+Mineral N & $\mathrm{kg_N} p_N$ & same, non-manure products, $\times$ \texttt{fertilizer.frt} N fraction & \$1.54~kg$^{-1}$~N \citep{usda_ams_urea_2025} \\
+Application passes & $n_\mathrm{events} p_\mathrm{op}$ & count of fert operations & \$37.07~ha$^{-1}$~event$^{-1}$ \citep{uidaho_custom_2025} \\
+Nitrate leaching & $\lambda_n \mathrm{NO_3}$ & \texttt{basin\_aqu\_yr.no3\_rchg} & \textbf{swept}, $\lambda_n = 0$ by default \\
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+Three details matter for reproducing the number. Manure is charged by \textbf{mass}, not
+by nitrogen content, because dairy manure here is a disposal stream whose real cost is
+haul-and-spread; its N content enters only the emissions accounting
+(\S\ref{sec:emissions}). Passes are charged per operation for either source, because
+without a per-event charge splitting nitrogen is free and ``how many passes are worth
+it'' has no answer. And $\lambda_n$ defaults to \textbf{zero}: leaching is always
+\emph{reported} as \texttt{no3\_leached\_kg}, and enters $\Pi$ only when a sweep sets a
+price (\S\ref{sec:multiobjective}). N\textsubscript{2}O never enters $\Pi$ at all.
+
+Per step,
+\begin{equation}\label{eq:reward}
+r_t = (\Pi_t - \Pi_{t-1}) \times 10^{-3}
+\end{equation}
+where $\Pi_t$ is the profit of the whole rotation re-simulated with operations decided
+through step $t$. Two properties follow. The sum telescopes and $\gamma = 1$, so
+\textbf{the episode return is exactly $10^{-3} \times$ total rotation profit} --- the
+decomposition is a credit-assignment device, not a change of objective, and it is what
+lets PPO and CMA-ES be checked for optimizing the same quantity
+(\S\ref{sec:protocol}). And a step's reward is not that month's profit but the
+whole-rotation change caused by that month's water, which is non-local: April water can
+move September yield. This is the direct consequence of SWAT+ having no
+checkpoint-restart, and it is why credit assignment here is harder than the 42-step
+horizon suggests. The $10^{-3}$ scale exists because unscaled \$~ha$^{-1}$ returns put
+the value target near $10^7$.
+
+\subsection{Multi-objective formulation}\label{sec:multiobjective}
+
+\textbf{Profit is the objective the policy maximizes; sustainability is the second
+objective, and it is settled by a frontier rather than by a price.} The distinction is
+operational, not rhetorical: a sustainability claim that depends on a number we cannot
+source is not a claim. Because neither externality has a defensible market price at this
+site, both enter as \emph{swept} prices rather than as fixed costs inside the headline
+objective:
+
+\begin{equation}\label{eq:frontier}
+\Pi(\lambda_w, \lambda_n) = \Pi_0 - \lambda_w \, \mathrm{mm_{irr}} - \lambda_n \, \mathrm{NO_3}
+\end{equation}
+
+where $\Pi_0$ is revenue net of the agronomic input costs. The grid is evaluated with
+the market-price arm ($\lambda_w$ at the scored water price, $\lambda_n = 0$) always
+reported alongside, and we publish the whole curve rather than selecting a point, so no
+conclusion rests on a shadow price we would have to defend.
+
+\textbf{Why both axes are swept, and why water is the sharper one.} The farmer's water
+price is precisely what \emph{fails} to reflect aquifer scarcity --- which is why
+depletion is a problem in the Eastern Snake Plain at all --- so treating it as a fixed
+cost would build the sustainability question out of the model. Applied water is
+measured, gate-verified against practice to within 0.01\,\%, and strongly responsive to
+management; it is the strongest sustainability axis available here.
+
+\textbf{The two axes are not independent, and we say so rather than presenting them as
+orthogonal.} In this model leaching is driven by over-irrigation, not by fertilization:
+holding irrigation at the measured rate, nitrogen dose produces zero leaching at every
+rate tested up to 4{,}490~kg~N~ha$^{-1}$, while raising applied water by 20\,\% produces
+32~kg~N~ha$^{-1}$. Both prices therefore act through the same lever, and a
+two-dimensional grid shows correlated rather than independent movement.
+
+\textbf{Claims are stated as dominance wherever possible} --- \emph{at matched profit,
+strategy X uses Y\,\% less water} --- because a dominance claim requires no price at all
+and survives a reader's disagreement about what water or nitrate is worth.
+
+\textbf{Re-scoring is exact; re-optimizing is not.} Profit is linear in every price and
+the cost terms are stored separably, so a schedule's profit at any price vector is
+arithmetic on stored rows with no further simulation. That answers \emph{how would this
+schedule fare if water were dearer}. It does not answer \emph{what schedule would you
+choose if it were} --- that requires re-running the search, and the two are reported
+separately rather than conflated.
+
+\textbf{What ``leaching'' means here.} NO\textsubscript{3} is \texttt{no3\_rchg} summed
+over the scored years --- nitrate reaching the aquifer in recharge. It excludes surface,
+lateral and tile pathways. This is the quantity of interest for groundwater loading, and
+it is also the quantity most exposed to the percolation limitation in
+\S\ref{sec:calibration}.
+
+\subsection{Prices}\label{sec:prices}
+
+\begin{table}[t]
+\caption{Prices and their bases. Breakevens are reported wherever a price is
+load-bearing; the water price is a composite whose sourced range is stated.}\label{tbl:prices}
+\begin{tabular*}{\tblwidth}{@{}>{\raggedright\arraybackslash}p{0.15\linewidth}>{\raggedright\arraybackslash}p{0.2\linewidth}>{\raggedright\arraybackslash}p{0.57\linewidth}@{}}
+\toprule
+Term & Value & Basis \\
+\midrule
+Crop prices & Idaho marketing-year averages, 2022--24 & USDA NASS \emph{Crop Values 2024 Summary} \citep{nass2024}; alfalfa:corn ratio 1.489 \\
+Alfalfa hay & \$/ton $\div$ ($0.907185 \times 0.88$) & dry-matter conversion \\
+Barley & 48~lb/bu, 13.5\,\% moisture & grain-to-DM conversion \\
+Corn silage & \$/bu $\times$ $9.0 \div (0.907185 \times 0.35)$ & \textbf{derived} --- no NASS silage series \\
+Mineral N & \textbf{\$1.54 / kg N} & USDA AMS urea, Inter-Mountain West, w/e 2025-04-04 \citep{usda_ams_urea_2025}; \$644/short ton at 46\,\% N \\
+Water & \textbf{\$0.43 / mm / ha} & rental opportunity cost \$0.235 (Water District 1 common pool, above Milner, \$29.00/acre-ft all-in \citep{wd01_2025}) + sprinkler pumping \$0.20 (Idaho Power Schedule 24, 6.72\,\textcent/kWh + \$16.50/kW \citep{idahopower_sched24}; 45~m head, 0.65 efficiency, 0.6 load factor assumed). Sourced range \$0.235--0.64 (rental only to Tier 7 + pumping); the canal company's own assessment is flat per share and not marginal \\
+Manure & \textbf{\$7.94 / Mg} & loading and spreading solid manure, \$7.20/ton, $n = 7$ \citep{isu_custom_2026}; haul-and-spread, not a purchase price \\
+Application pass & \textbf{\$37.07 / ha} & dry fertilizer application, \$15.00/acre, $n = 1$ \citep{uidaho_custom_2025}; Iowa \$8.15/acre, $n = 59$ \citep{isu_custom_2026}. Term after CyclesGym \citep{turchetta2022}: without it, splitting N is free \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+Profit is linear in every price and the cost terms are stored separably, so the price at
+which any advantage vanishes is exact arithmetic on stored rows with no further
+simulation. We report those breakevens wherever a price is load-bearing,
+which converts a result that depends on an unsourced number into a statement of the form
+\emph{this holds for any price below X}.
+
+\subsection{Learning algorithm, and why it is configured this way}\label{sec:ppo}
+
+The policy is PPO (\texttt{MlpPolicy}, Stable-Baselines3) over the continuous action
+box, trained on four \texttt{SubprocVecEnv} workers --- parallelism is across CPU cores
+because SWAT+ is CPU-bound and the engine, not the network, is the cost. Three
+configuration choices are not defaults and are load-bearing enough to belong in the
+method rather than in a config file.
+
+\textbf{$\gamma = 1$, and rollout lengths keyed to the episode.} The objective is total
+rotation profit over a fixed 42-step horizon, so discounting would optimize something
+else. \texttt{n\_steps} is 4 episodes (168) and \texttt{batch\_size} 2 episodes (84):
+both are set \emph{by formula from the episode length} rather than tuned. This is
+deliberate and \S\ref{sec:protocol} relies on it --- hyperparameters that were searched
+would need a validation split the weather record cannot support.
+
+\textbf{Observations are statistically normalized, and the statistics travel with the
+policy.} With the order-of-magnitude divisors of \S\ref{sec:observation} alone, PPO
+learns an \emph{exactly constant} schedule: the standard deviation of applied depth
+across held-out weather windows is \textbf{0.000~mm}. Several channels sit near zero in
+practice --- nitrogen and water stress divided by 50 when stress runs 0--5 --- and a
+network fed them learns to ignore them, which is a failure of input scaling masquerading
+as a finding about adaptivity. Running observations through a \texttt{VecNormalize}
+filter (clip 10) raises that standard deviation to \textbf{6.4~mm}, raises return by
+\textbf{1{,}320~\$~ha$^{-1}$}, and \emph{cuts} applied water from 6{,}116 to 5{,}352~mm.
+We report this because a paper whose question is ``does the policy condition on state''
+can be answered negatively by this bug alone, and the negative result would look
+substantive. The filter's mean and variance are saved beside the policy weights and are
+a \textbf{required} argument to every scorer: a policy trained on normalized
+observations and scored on raw ones is not a degraded policy but a different objective
+--- the same class of silent divergence as the nitrogen-cap mismatch in
+\S\ref{sec:action}, and the reason \S\ref{sec:protocol} makes objective parity a tested
+property.
+
+\textbf{Initial exploration scale.} \texttt{log\_std\_init} $= -2.0$
+($\sigma \approx 0.14$ on the unit action box), against the SB3 default of 0. At
+$\sigma \approx 0.37$ the policy applied 6{,}116~mm against a measured 3{,}939 and
+saturated 10\,\% of its actions at the box boundary; at $\sigma \approx 0.14$ it applied
+4{,}533~mm, earned more, and saturated 2\,\%. A wide initial Gaussian on a bounded action
+that is \emph{already} generous --- 200~mm in a single month --- spends the budget in a
+region no manager would irrigate in.
+
+Both the observation filter and the exploration scale are hashed into the key that
+identifies a saved policy, alongside the price vector, the nitrate price, the cap and
+the pinned baseline plan, so a checkpoint cannot silently resume into a run asking a
+different question.
+
+\subsection{Emissions accounting}\label{sec:emissions}
+
+Nitrous oxide is computed by IPCC (2019 Refinement) Tier 1 accounting
+\citep{ipcc2019} from quantities the simulation already produces --- direct
+$\mathrm{EF1} \times N_\mathrm{applied}$, indirect
+$\mathrm{EF5} \times \mathrm{NO_3}$ from leaching, and indirect
+$\mathrm{EF4} \times \mathrm{FracGASF} \times N_\mathrm{applied}$ from volatilization
+--- and reported beside profit. It is \textbf{accounting over simulated nitrogen flows,
+not a simulated N\textsubscript{2}O flux}, and is labelled as such throughout.
+
+We do not use the engine's denitrification output as an N\textsubscript{2}O proxy. It is
+available and would cost nothing to read, but at this model's calibrated parameters
+denitrification is effectively switched off (\texttt{denit\_exp} $= 0.001$ against a SWAT
+default near 1.4; \texttt{denit\_frac} $= 1.0$, firing only at saturation), and all
+nitrate loss terms together come to under 5~kg~N~ha$^{-1}$ in the worst year. Re-enabling
+it would mean re-fitting a nitrogen cycle that is calibrated against a measured soil
+nitrate trajectory, trading a validated quantity for an unvalidated one.
+
+In the irrigation experiment nitrogen is pinned, so the direct term is constant across
+arms and only the indirect leaching term varies; emissions is therefore reported but not
+given its own swept axis, where it would be a rescaled copy of the nitrate axis. It
+becomes an independent lever in the nitrogen experiment.
+
+\section{Evaluation protocol}\label{sec:protocol}
+
+Each element exists to prevent a specific way of being wrong.
+
+\textbf{Budgets matched in engine runs.} Timesteps and CMA-ES evaluations are not
+comparable units, but both reduce to engine runs: one per environment step, one per
+window per open-loop evaluation. Both methods are held to the same total, and the
+realized counts are read back off the runner and reported rather than assumed.
+
+\textbf{Objective parity, tested rather than assumed.} Two methods can consume identical
+budgets and still optimize different problems if a constraint, price, or repair rule is
+applied on one code path and not the other. Because constraints here are enforced by
+repair (\S\ref{sec:action}), such a divergence is invisible in the reward --- it changes
+what was simulated, not what was priced. We therefore treat parity as a testable
+property: an identical plan scored through the open-loop path and through the
+environment rollout must agree on profit, applied water, applied nitrogen, yield and
+leaching, and this is asserted in the test suite. We recommend the check generally; a
+constraint that binds on one arm and not another can invert a headline without producing
+any visible anomaly.
+
+\textbf{Year-disjoint weather windows.} Training windows start 1995--2004 and test
+windows start 2013--2017; the eight-year spans share no calendar year, and 2012 is left
+unused as a buffer. An assertion enforces this at import. The rule is not cosmetic: an
+earlier split placed a training window and a test window seven calendar years apart out
+of eight, so the optimizer was tuned and evaluated on largely the same weather.
+
+\textbf{Reported uncertainty accounts for window overlap.} Test windows begin in
+consecutive years, so adjacent windows share seven of eight calendar years and the
+paired differences are strongly correlated. A naive standard error over windows
+understates uncertainty. We report intervals from a moving-block bootstrap and state the
+effective independent sample size, which for a 12-year test span and 8-year windows is
+approximately 1.5 --- considerably smaller than the number of windows suggests. This is
+structural: with rotation-length windows and a three-decade weather record, no split
+yields many independent test windows.
+
+\textbf{Seed replication with a median representative.} Learned policies are trained at
+three or more seeds and the \emph{median} performer is reported. Reporting the best of
+$N$ is selection on the evaluation set.
+
+\textbf{Frozen plans selected on train.} A policy is rolled out on each training window,
+each rollout yielding a concrete fixed schedule; the schedule with the best training
+mean is replayed on the test windows. Selecting the best of $N$ on test would bias the
+adaptation estimate negative by construction, as the expected maximum of $N$ noisy
+estimates.
+
+\textbf{No validation split, by design rather than by omission.} The training block
+carries both roles a validation set would otherwise divide: it is where the optimizers
+search, and it is where every selection the protocol makes is resolved --- frozen plans
+are chosen on their training means, and the matched-budget open-loop optimum that a
+policy is measured against is itself searched on the training windows. We do not carve a
+third block out of it. The record cannot support one: eight-year windows over a
+1995--2025 weather series yield 10 training and 5 test starts once the buffer year is
+removed, and a validation block could only be taken from one of the two, each of which
+already sits near an effective independent sample size of 1.5. Selecting a configuration
+on two or three overlapping windows is close to selecting at random, so a validation
+split of this size would buy the appearance of a safeguard rather than the safeguard.
+Nor does the protocol need one: PPO's hyperparameters are fixed by formula from the
+episode length rather than searched, seeds are summarized by their median rather than
+their best, and CMA-ES and PPO are held to a common budget rather than each tuned to its
+own most favourable configuration. A validation set exists to adjudicate a choice among
+candidates; we have removed the choices instead. This argument covers policy training
+only. It does not extend to calibration, whose parameters were fit against measurements
+falling inside both blocks, so the environment itself is not year-held-out from the
+evaluation --- a limitation we state in \S\ref{sec:limitations} rather than one this
+split resolves.
+
+\textbf{Frozen plans are a state-dependence control, not an adaptation metric.} If a
+policy scores no better than its own frozen schedule, it has learned a constant and any
+``adaptivity'' is nominal. But the converse does not follow. A policy's emitted schedule
+is not a \emph{searched} schedule, so the gap between policy and frozen plan mixes two
+effects: how much the policy gains by conditioning on state, and how much worse its
+emitted schedule is than a well-optimized one. Where the frozen plan falls below the
+matched-budget open-loop optimum, that gap is dominated by search quality and overstates
+adaptation. The defensible measure of adaptation is the policy against the
+matched-budget open-loop optimum; the frozen plan answers only whether the policy is a
+constant.
+
+\textbf{A perfect-foresight reference, reported as an estimate.} Optimizing a separate
+open-loop schedule per window and comparing against one shared schedule bounds what
+weather-specific information is worth in this action space. It is an \emph{estimate},
+not an upper bound: each per-window optimization is itself a finite-budget search over
+42 dimensions and can be under-converged, and we have observed a learned policy exceed
+it. We report it as \texttt{foresight\_estimate} and never as a ceiling.
+
+\textbf{A parametric feedback controller as a third policy class.} A three-parameter
+rule --- $\mathrm{depth} = \mathrm{clip}(a + b \cdot \mathrm{soil\text{-}water\ deficit}
++ c \cdot \mathrm{precipitation\ deficit})$ --- uses the same action space, the same
+observations, and the same full-horizon replay, hence the same engine cost per rollout
+as the learned policy. It separates two very different conclusions: that adaptation has
+little value in this system, or that a particular learning method failed to capture it.
+
+\section{Case study}\label{sec:casestudy}
+
+\subsection{Site}\label{sec:site}
+
+The field is a 1-ha Portneuf silt-loam plot at the USDA-ARS GRACEnet site near Kimberly,
+Idaho, under a corn--barley--alfalfa rotation. The scored window is 2013--2019 with 2012
+as spin-up. Management comprises 158 measured irrigation events totalling 3{,}938.8~mm
+and dairy manure of measured composition, applied in the corn and barley years.
+Dry-matter yield is measured in every scored year. A calibrated ArcSWAT model of the same
+field supplies secondary references --- ET, percolation, uptake, leaching --- that are
+not measured on site and are weighted below measurement.
+
+The generated monthly baseline reproduces measured applied depth to within 0.01\,\%
+(3{,}938.9 vs 3{,}938.8~mm), which is asserted before any arm is scored. Without that
+gate an irrigation experiment can report gains that are simply a different amount of
+water than practice.
+
+\subsection{Calibration: where every number comes from}\label{sec:calibration}
+
+The model is a single 1-ha HRU whose inputs are traced, value by value, to a named source
+file; the full audit is in the repository's \texttt{PROVENANCE.md}. What matters for
+reading the results is not the fitting procedure --- there was very little of it --- but
+which numbers are \emph{measured}, which are \emph{borrowed} from a prior model of the same
+field, and which are \emph{fitted}, because each class carries a different kind of
+uncertainty. Table~\ref{tbl:sources} sets that out; the rest of this section gives the
+numbers a reader needs to interpret the results, and the three structural limits that no
+calibration can remove.
+
+\begin{table*}[t]
+\caption{Provenance of every model input that affects the reported quantities. MEAS: the
+site's primary data (USDA-ARS GRACEnet and Long-Term Manure studies, AgriMet). REF: a
+calibrated ArcSWAT/SWAT2012 model of the same field, HRU 119. WB: the collaborator's
+crop-parameter workbook. Nothing else in the model has been tuned to an
+outcome.}\label{tbl:sources}
+\begin{tabular*}{\tblwidth}{@{}>{\raggedright\arraybackslash}p{0.27\textwidth}>{\raggedright\arraybackslash}p{0.3\textwidth}>{\raggedright\arraybackslash}p{0.22\textwidth}>{\raggedright\arraybackslash}p{0.13\textwidth}@{}}
+\toprule
+Input & Value(s) & Source & Class \\
+\midrule
+Irrigation events, 2013--2019 & 158 events, 3{,}938.8~mm & GRACEnet irrigation workbooks & measured \\
+Manure rate and composition & 4 applications; min/org N and P per source & GRACEnet manure analyses & measured \\
+Dry-matter yield (target) & 7 years, all crops & GRACEnet \citep{bierer2022} & measured \\
+April soil-nitrate profile (target) & 2013--2019, 0--122~cm, 4 plots & GRACEnet & measured \\
+Initial soil NO$_3$ / labile P & 9.33 / 8.13~ppm, mass-weighted April 2013 & GRACEnet soil profile & measured \\
+Bulk density & four-plot mean & GRACEnet soil profile & measured \\
+Soil profile (AWC, $K_\mathrm{sat}$, C, pH, CaCO$_3$) & Portneuf silt loam, 4 layers to 1{,}220~mm & Long-Term Manure study, \texttt{SWAT Soil Props} & measured \\
+Humidity, wind & daily, 2012--2020 & AgriMet TWFI \citep{agrimet} & measured \\
+Solar radiation & daily, 2012--2020 & AgriMet via REF & measured \\
+Precipitation, temperature & daily, 2012--2019 & AgriMet via RuFaS export & measured \\
+Grass-reference ET (target for PET) & AgriMet \texttt{ETOS}, 2013--2020 & AgriMet TWFI \citep{agrimet} & measured \\
+Crop coefficients (\texttt{bm\_e}, \texttt{harv\_idx}, \texttt{lai\_pot}, canopy curve, $T_\mathrm{opt}$, $T_\mathrm{base}$, \texttt{rt\_dp\_max}) & alfalfa 17.0 / 1.00 / 5.0; corn silage 50.0 / 1.01 / 4.0; barley 28.0 / 0.52 / 4.0 & WB, \emph{Crop Parameters and Plant Harvest Dates} & collaborator-validated, not fitted \\
+Harvest efficiency & 0.98 / 0.54 / 0.95 & WB \texttt{HARV\_EFF} & collaborator-validated \\
+Operation dates & planting, harvest, kill, manure 10 April & REF \texttt{.mgt} & borrowed \\
+CN2, Manning $n$, slope, slope length & 75, 0.14, 0.012, 122~m & REF \texttt{.mgt}/\texttt{.hru} & borrowed \\
+\texttt{esco}, \texttt{epco} & 0.95, 0.50 & REF \texttt{.hru} & borrowed \\
+Groundwater, snow, P block & \texttt{alpha\_bf} 0.048, \texttt{melt\_tmp} 2.0, \ldots & REF \texttt{.gw}, \texttt{basins.bsn} & borrowed \\
+\texttt{n\_perc}, \texttt{n\_uptake}, \texttt{denit\_exp} & 0.20, 10, 0.001 & REF \texttt{basins.bsn} & borrowed \\
+\texttt{pet\_co} & \textbf{0.964} & fitted to AgriMet ETOS, closed form & fitted (1 parameter) \\
+\texttt{orgn\_min} & \textbf{0.00091} & fitted to yield + soil-nitrate trajectory & fitted (1 parameter) \\
+Weather-generator climatology & station \texttt{IDTWINFALLSWS0} & REF \texttt{.wgn} & borrowed \\
+Everything else & 38 files & SWAT+ demo template for the Twin Falls region & default, unexamined \\
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+\textbf{Two fitted parameters, each against one measurement.} Potential ET is linear in
+\texttt{pet\_co}, so fitting it to the site's measured grass-reference ET series
+(AgriMet TWFI \texttt{ETOS}, 2013--2020) has a closed-form solution: \textbf{0.964}, at which
+simulated PET matches measured ET$_0$ to $+0.0$\,\%. The reference ArcSWAT model of the
+same field scores $+20.8$\,\% on the same target. \texttt{orgn\_min}, the humus
+mineralisation rate, is the only parameter left free after the crop coefficients were
+returned to the workbook; it lands at 0.00091 and is weakly identified (the objective
+moves by 0.4\,\% across 0.0008--0.0012). A SWAT2012 value of 0.001 borrowed from a site
+sweep would have been numerically similar but is not transferable: it reproduces the
+measured mineralisation of 209.8~kg~N~ha$^{-1}$~yr$^{-1}$ in SWAT2012 and gives
+51.5 here. Every other value is measured, borrowed, or a template default.
+
+\textbf{Crop coefficients are the collaborator's, not ours.} An earlier fit moved nine crop
+coefficients and bought 2.3 points of mean absolute yield bias, paid for by making every
+alfalfa year 14--17 points worse and by pushing corn's radiation-use efficiency to 64.5
+against a site-calibrated 50.0 --- a parameter absorbing a structural artefact rather than
+measuring anything. The workbook values were restored and are now asserted by a test.
+The price of that decision is visible in Table~\ref{tbl:yield} and is reported rather
+than fitted away.
+
+\textbf{Measurement outranks the reference model.} Where the two disagree the measurement
+is used: initial soil nitrate (9.33~ppm measured against 0 in the reference), labile P
+(8.13 against 5), bulk density, and the 2014 and 2019 irrigation totals. The reference
+model's ET, percolation, uptake and leaching are secondary references only, weighted
+below measurement and never used as fitting targets.
+
+\textbf{Three structural limits.} \emph{Barley phenology}: typed as a cold annual, an
+April-sown crop collapses; it is typed warm annual, which restores a credible heat-unit
+trajectory. \emph{Alfalfa residency}: declared perennial, alfalfa remains resident in
+years it is not the intended crop, and the engine provides no clean end to that
+residency; per-crop agreement within $\pm 15$\,\% is therefore not simultaneously
+reachable for all crops. \emph{Legume fixation}: SWAT computes fixation as the soil-supply
+shortfall, so soil nitrate and fixation are strict substitutes and the measured pool rise
+under alfalfa is unreachable at any parameter setting. The nitrate term is down-weighted
+for that reason.
+
+\textbf{Percolation behaves correctly but is not validated here.} Actual ET runs at
+0.66--0.70 of PET under measured practice. Percolation is \textbf{threshold-behaved in
+applied water}: below crop demand essentially nothing drains, and above it drainage and
+nitrate rise together (Table~\ref{tbl:perc}). Implied leachate concentration stays within
+8--24~mg~L$^{-1}$ wherever drainage occurs, physically plausible and near the
+10~mg~L$^{-1}$ drinking-water standard that motivates regional nitrate concern. The water
+and nitrogen pathways are therefore consistent, which is what the frontier in
+\S\ref{sec:frontier} requires. But the threshold sits \emph{above} measured practice ---
+the measured schedule drains 0--19~mm~yr$^{-1}$ depending on the weather window, and the
+generated baseline at the same total drains none --- so $\lambda_n$ can separate
+strategies only where one over-irrigates, and a frontier across strategies that all
+irrigate sanely passes through zero.
+
+\begin{table}[t]
+\caption{Percolation and nitrate response to applied water: the generated monthly
+baseline scaled uniformly, 2013 start year, current model. Rule: re-measure with
+\texttt{scripts/percolation\_check.py} rather than quote.}\label{tbl:perc}
+\begin{tabular*}{\tblwidth}{@{}LRRRR@{}}
+\toprule
+Scale & Applied (mm, 7 yr) & Percolation (mm yr$^{-1}$) & NO$_3$ (kg N ha$^{-1}$ yr$^{-1}$) & Leachate (mg L$^{-1}$) \\
+\midrule
+$\times 0.6$ & 2{,}363 & 0.0 & 0.00 & --- \\
+$\times 0.8$ & 3{,}151 & 0.0 & 0.00 & --- \\
+$\times 1.0$ \emph{(measured depth)} & 3{,}939 & 0.0 & 0.00 & --- \\
+$\times 1.2$ & 4{,}727 & 17.4 & 1.45 & 8.3 \\
+$\times 1.4$ & 5{,}366 & 77.2 & 9.07 & 11.8 \\
+$\times 1.6$ & 5{,}778 & 117.0 & 28.11 & 24.0 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+Two limits remain. There is \textbf{no on-site measurement of leaching or percolation},
+so reported kg~N~ha$^{-1}$ rank strategies \emph{within the model} and are not
+measurements of what this field loses. And in-crop ET runs 15--26\,\% below a regional
+OpenET benchmark for the same crops (barley $-15$, corn $-24$, alfalfa $-26$\,\%): the
+model has no crop-coefficient mechanism above grass-reference ET, the deficit is partly
+water supply rather than canopy, and fitting \texttt{pet\_co} to close it would trade a
+measured target for an off-site one. It is reported as a bias, not corrected.
+
+\section{Results}\label{sec:results}
+
+\subsection{Calibration state}\label{sec:calibstate}
+
+Agreement must be read per crop and year (Table~\ref{tbl:yield}). Aggregate
+goodness-of-fit is misleading when errors are signed, because they cancel across crops
+and across years within a crop.
+
+\begin{table}[t]
+\caption{Annual dry-matter yield (Mg ha$^{-1}$), shipped model of 2026-09-10 against the
+GRACEnet measurement and the reference ArcSWAT model.}\label{tbl:yield}
+\begin{tabular*}{\tblwidth}{@{}LLRRRR@{}}
+\toprule
+Year & Crop & SWAT+ & GRACEnet & Error & Reference \\
+\midrule
+2013 & Corn & 18.7 & 22.1 & $-15.4$\,\% & 21.8 \\
+2014 & Barley & 9.0 & 5.9 & $+52.4$\,\% & 6.5 \\
+2015 & Alfalfa & 13.7 & 9.0 & $+51.9$\,\% & 9.9 \\
+2016 & Alfalfa & 21.4 & 14.8 & $+45.0$\,\% & 15.8 \\
+2017 & Alfalfa & 24.5 & 16.2 & $+51.4$\,\% & 16.4 \\
+2018 & Corn & 20.9 & 22.9 & $-9.0$\,\% & 25.4 \\
+2019 & Barley & 6.0 & 8.8 & $-31.2$\,\% & 6.9 \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\begin{table}[t]
+\caption{Per-crop yield bias against GRACEnet, and the other tier-1 targets.}\label{tbl:bias}
+\begin{tabular*}{\tblwidth}{@{}>{\raggedright\arraybackslash}p{0.4\linewidth}>{\raggedright\arraybackslash}p{0.55\linewidth}@{}}
+\toprule
+Quantity & Value \\
+\midrule
+Alfalfa yield ($n = 3$) & $\mathbf{+49.2}$\,\% \\
+Corn yield ($n = 2$) & $-12.1$\,\% \\
+Barley yield ($n = 2$) & $+2.4$\,\% (cancellation: $+52.4$ / $-31.2$) \\
+Yield, RMS per-year & 40.4\,\% \\
+PET vs AgriMet ET$_0$ & $+0.0$\,\% (1{,}157 vs 1{,}164~mm~yr$^{-1}$) \\
+April soil nitrate, RMS miss & 94~kg~N~ha$^{-1}$; 1 of 6 years inside its bracket \\
+Humus mineralisation & 51.5 vs 209.8 measured~kg~N~ha$^{-1}$~yr$^{-1}$ \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+Alfalfa is over-predicted by half in every year, uniformly. That is the cost of the
+workbook coefficients (\S\ref{sec:calibration}) and it is carried, not fitted away.
+Because alfalfa is three of the seven rotation years and profit is revenue-led, every
+dollar \emph{level} in this paper carries that bias. The rotation is fixed and identical
+across every strategy compared, so the bias is common-mode in the paired
+\emph{differences} the headline claims rest on; it does not cancel in absolute profit or
+in anything quoted as \$~ha$^{-1}$ rather than $\Delta$\$~ha$^{-1}$. Barley's crop mean
+is cancellation of opposite signs. Corn's shortfall is a growth deficit under the
+validated parameters, consistent with its ET running below the regional benchmark.
+
+\subsection{Experiment 1 --- irrigation}\label{sec:exp1}
+
+\textbf{How much is there to adapt to?} Before ranking strategies, the perfect-foresight
+reference bounds the question. Optimizing a separate 42-parameter schedule per weather
+window beats one shared schedule by $\mathbf{+836 \pm 68}$~\$~ha$^{-1}$ on the held-out
+windows ($n = 5$, per-window range $+651$ to $+1{,}062$), far above the
+250~\$~ha$^{-1}$ noise floor. Weather-specific scheduling is therefore worth a
+substantial amount at this site: a null result for closed-loop control here cannot be
+explained by there being nothing to adapt to. Per \S\ref{sec:protocol} this is an
+estimate and not an upper bound --- each per-window oracle is a finite-budget search over
+42 dimensions and may be under-converged, which biases the figure down.
+
+% Table rows below are being regenerated under verified objective parity (Sec 4).
+% The earlier table applied an N loading cap to the open-loop arms (incl. the CMA-ES
+% objective) but not to the learned-policy arm, so the two optimized different problems
+% at matched budget. Only measured practice, which builds no plan, is unaffected.
+
+\begin{table*}[t]
+\caption{Exp 1 test profit (\$ ha$^{-1}$), window starts 2013--2017,
+$\lambda_n = 0$.}\label{tbl:exp1}
+\begin{tabular*}{\tblwidth}{@{}LRRRRRR@{}}
+\toprule
+Strategy & Test profit & vs measured & vs open-loop & Water (mm) & NO$_3$ (kg N/ha) & N$_2$O (kg/ha) \\
+\midrule
+Measured practice & 20{,}925 & 0 & --- & 3{,}939 & --- & --- \\
+Generated monthly default & --- & --- & --- & 3{,}939 & --- & --- \\
+CMA-ES open-loop & --- & --- & 0 & --- & --- & --- \\
+CMA feedback controller & --- & --- & --- & --- & --- & --- \\
+PPO policy (median seed) & --- & --- & --- & --- & --- & --- \\
+Frozen plan (train-selected) & --- & --- & --- & --- & --- & --- \\
+\emph{Foresight estimate (oracle $-$ shared)} & $\mathbf{+836 \pm 68}$ & --- & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+% TABLE TO ADD: Exp 1 across PPO seeds.
+
+\subsection{The profit--leaching frontier}\label{sec:frontier}
+
+% RESULTS TO ADD: the lambda_n sweep. Anchor grid points on breakevens computed from
+% the lambda_n = 0 results, not a priori: the nitrate price at which the learned policy's
+% advantage over open-loop search vanishes, and the price at which its advantage over
+% measured practice vanishes. Report both, the full frontier, and the cross-scoring
+% matrix (every strategy optimized at one price, re-scored at every other -- exact
+% arithmetic, no further simulation).
+% NB CLAUDE.md rule 1 (2026-08-28): if the arms do not separate on leaching, that
+% non-separation IS the finding -- report it rather than a curve.
+
+The frontier answers the second question, once \S\ref{sec:exp1} has answered the first.
+Given a strategy that earns more, does it also reach lower leaching at matched profit
+than a schedule searched to the same budget --- that is, does closed-loop control still
+pay once the objective becomes timing-sensitive rather than volume-sensitive? A profit
+gain bought with more water and more nitrate is not an improvement, and the frontier is
+what makes that visible without our having to price either.
+
+\subsection{Adaptation and its baseline}\label{sec:adaptation}
+
+% RESULTS TO ADD: the policy against the matched-budget open-loop optimum (the
+% adaptation measure), and against its own train-selected frozen plan (the
+% state-dependence control), with the gap between the two interpretations made explicit
+% per Sec 4. Bootstrap intervals and effective sample size -- never naive SEs over
+% overlapping windows.
+
+\subsection{Limitations}\label{sec:limitations}
+
+A single HRU and soil. Full-horizon replay makes every evaluation cost 42 engine runs,
+which bounds achievable budgets. The water price is a composite whose pumping term rests on an assumed head and efficiency, and the application-pass rate rests on a single survey response; breakevens are
+reported wherever they are load-bearing. Calibration mixes measured and reference-model
+targets without year hold-out, and measured yield, crop identity and manure records end
+in 2019, so no independent hold-out period is available. \textbf{Leaching is reported,
+and priced in the frontier, but not validated} --- the percolation pathway is a known
+rev-62 divergence (\S\ref{sec:calibration}), so a policy optimized against leaching may
+be exploiting model error, and that failure would not be visible in the results.
+N\textsubscript{2}O is accounting over simulated nitrogen flows, not a simulated flux.
+Test windows overlap, so the effective independent sample size is far below the number of
+windows. Rebalancing the split to widen the test span, and wiring the site's measured
+seasonal water-balance series as an independent check on the model's soil-water storage,
+are both available and are left to future work.
+
+\section{Future work}\label{sec:future}
+
+Extend beyond one HRU. Complete the nitrogen, rotation
+and joint levers under the same protocol, where emissions becomes an independent axis
+rather than a rescaled copy of leaching. Resolve or bound the rev-62 percolation
+divergence so that leaching magnitudes can carry field meaning. Validate winning
+schedules in an independent simulator.
+
+\section{Conclusion}\label{sec:conclusion}
+
+We set out to ask whether a learned policy can raise farm profit without paying for it in
+water and nitrate, and we have built the two things that question needs before it can be
+answered honestly: a Gymnasium environment driven by official SWAT+ on a measured
+Kimberly field --- to our knowledge the first such stack --- and a protocol that makes a
+comparison between a learned policy and a searched schedule mean what it appears to mean.
+The protocol's requirements are unglamorous: match budgets in engine runs, verify that
+competing methods optimize the same objective rather than assuming it, keep training and
+evaluation weather disjoint, report uncertainty that accounts for overlapping windows,
+and treat a policy's own frozen schedule as a control on state-dependence rather than as
+a measure of adaptation. Without them, ``the policy is greener'' cannot be told apart
+from ``the policy was searched harder.''
+
+Profit is what the reward maximizes; sustainability is the second objective, and refusing
+to price it is what makes the frontier rather than a scalar the deliverable. We report
+where each method's curve lies and where curves cross, never an optimum at a chosen
+$\lambda_n$, so a reader who disagrees with us about what nitrate is worth can still read
+the result.
+% EMPIRICAL FINDING GOES HERE, once the corrected runs land.
+
+Two limits bound how far any of this reaches beyond the model, and both grow rather than
+shrink the moment sustainability is treated as a real objective. Leaching ranks
+strategies within the model and does not measure what the field loses; optimizing
+\emph{for} an unvalidated channel is precisely the regime in which model error is
+exploited without becoming visible. And N\textsubscript{2}O is not simulated by SWAT+ at
+all --- what we report is IPCC Tier 1 accounting over simulated nitrogen flows, never
+priced. A greener policy in these results is a greener policy \emph{in this model}, which
+is a claim worth making only because the protocol makes it checkable.
+
+\section*{Declaration of competing interest}
+
+\todo{complete --- required by the journal; state ``The authors declare that they have no
+known competing financial interests or personal relationships that could have appeared to
+influence the work reported in this paper'' if applicable.}
+
+\section*{Acknowledgements}
+
+\todo{to complete}
+
+\section*{Data and code availability}
+
+Code, model inputs, and experiment scripts: \todo{repository URL}. Input provenance and
+build notes: \texttt{PROVENANCE.md} (supplement).
+
+% The journal's research-data policy is Option B: deposit and cite, or state why not.
+
+\printcredits
+
+\bibliographystyle{elsarticle-num}
+\bibliography{refs}
+
+\end{document}

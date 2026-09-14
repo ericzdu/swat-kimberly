@@ -142,14 +142,21 @@ OVERRIDES: dict[tuple[str, str], tuple[float, str]] = {
     # ETos and to be treating a symptom; ``pet_co`` is now calibrated to 0.964 and the drainage
     # collapse is an open engine-difference finding — PROVENANCE §5h, OPEN_ITEMS #11.
     #
-    # **Ownership, settled 2026-08-28.** ``lai_min`` has no workbook value and *is* in
-    # ``calibrate/optimize.py:PARAMS``, so the optimizer owns it — but this table also wrote it,
-    # and the two silently fought: any ``port_crops.py`` run after an ``optimize.py --apply``
-    # reverted the fitted value to 1.75 without saying so. The number here is therefore the
-    # **last applied fit**, kept so that re-porting is idempotent rather than destructive.
-    # Re-fit it with the optimizer, then update this constant; never edit it to a value the
-    # optimizer has not produced. ``scripts/check_param_state.py`` fails if the two disagree.
-    ("alfa", "lai_min"): (1.01216, "last applied fit (calibrate/optimize.py owns this)"),
+    # **Ownership, re-settled 2026-09-10: this table owns it outright.** It was shared with
+    # ``calibrate/optimize.py:PARAMS`` (the two silently fought — any ``port_crops.py`` run
+    # after an ``optimize.py --apply`` reverted the fitted value without saying so), and the
+    # constant was carrying 1.01216, the last applied fit. That fit was run against the
+    # pre-rule-11b crop coefficients and is an orphan of it.
+    #
+    # Measured 2026-09-10 on the workbook crops: moving ``lai_min`` 1.01216 -> 1.75 changes
+    # the calibration score by **zero to five significant figures**, and a free refit parks it
+    # at 0.4501 for the same zero. Under rev 62 the resident-perennial PAR-theft pathway it
+    # used to act through is gone (plant-community fix, see the sweep above), so it is now an
+    # **inert dimension** — exactly the ``corn.harv_idx`` failure PROVENANCE §5j documents, a
+    # parameter parked at a value that reads as tuned and is noise. It is therefore dropped
+    # from ``PARAMS`` and pinned here at the sourced 1.75, which is the value the rest of the
+    # model was built around. ``scripts/check_param_state.py`` asserts it.
+    ("alfa", "lai_min"): (1.75, "sourced; inert under rev 62 — dropped from PARAMS 2026-09-10"),
     # REMOVED 2026-08-07 (CLAUDE.md rule 11b): ("alfa", "bm_e") -> 10.0. Its own rationale
     # said the quiet part out loud -- "it is absorbing the over-prediction, not measuring
     # radiation-use efficiency" -- which is exactly why it goes. The workbook's 17.0 stands.

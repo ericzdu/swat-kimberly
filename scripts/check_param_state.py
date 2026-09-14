@@ -18,9 +18,11 @@ The ownership boundary this enforces:
 * **Optimizer-owned** — the parameters in that ``PARAMS`` list, which have no workbook value.
   Their values are *reported*, not asserted: there is no source of truth for them other than the
   last fit, and pinning them here would just move the conflict.
-* **Shared, and therefore the dangerous one** — ``alfa.lai_min`` is optimizer-owned but is also
-  written by ``port_crops.OVERRIDES``. The two must agree, so that re-porting is idempotent
-  rather than a silent revert.
+* **Shared, and therefore the dangerous one** — ``alfa.lai_min`` was optimizer-owned *and*
+  written by ``port_crops.OVERRIDES``, and the two silently fought. Settled 2026-09-10: it is
+  inert under rev 62 (1.01216 -> 1.75 moves the calibration score by zero to five significant
+  figures), so it was dropped from ``PARAMS`` and pinned in ``OVERRIDES`` at the sourced 1.75.
+  It is now asserted, not reported. Any future shared parameter must be resolved the same way.
 
     uv run python scripts/check_param_state.py
 """
@@ -137,7 +139,9 @@ def main() -> None:
     # Reported, never asserted: no source of truth beyond the last fit.
     txt = (TIO / "plants.plt").read_text()
     print("\noptimizer-owned (reported, not checked):")
-    for row, col in (("alfa", "lai_min"), ("corn", "days_mat"), ("barl", "days_mat")):
+    # ``alfa.lai_min`` is no longer listed here: it was dropped from PARAMS 2026-09-10 as inert
+    # and pinned in OVERRIDES, so ``shared_drift`` above now *asserts* it rather than reporting.
+    for row, col in (("corn", "days_mat"), ("barl", "days_mat")):
         print(f"  {row}.{col:<10} = {get_value(txt, 'plants.plt', row, col)}")
     for f, row, col in (("hydrology.hyd", "hyd1", "epco"), ("hydrology.hyd", "hyd1", "pet_co"),
                         ("parameters.bsn", "", "orgn_min"), ("parameters.bsn", "", "n_perc"),

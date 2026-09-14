@@ -189,7 +189,7 @@ def data_env_compare() -> tuple[str, list[str], list[list[str]]]:
     return title, headers, rows
 
 
-def data_table1_yield():
+def data_yield():
     base = json.loads(BASELINE.read_text())
     sim = {int(r["year"]): r for r in base["yields"]}
 
@@ -240,7 +240,7 @@ def data_table1_yield():
     )
 
 
-def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
+def data_exp1_profit() -> tuple[str, list[str], list[list[str]], str]:
     ceiling = json.loads((RUNS / "exp1_ceiling.json").read_text())
     openloop = json.loads((RUNS / "exp1_irrigation_openloop.json").read_text())
     controller = json.loads((RUNS / "exp1_controller.json").read_text())
@@ -296,7 +296,7 @@ def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
             "(3 PPO seeds; mean ± SE for advantage and adaptivity). "
             + _ess_note(paired["fixed_vs_default"])
         )
-    title = "Table 2. Exp 1 test profit ($/ha), window starts 2013–2017."
+    title = "Exp 1 test profit ($/ha), window starts 2013–2017."
     return title, headers, rows, note
 
 
@@ -315,23 +315,23 @@ def main() -> None:
             col_widths=[2.6, 3.0, 1.1, 0.9, 1.4],
         )
 
-    t1, h1, r1, t1b, h1b, r1b = data_table1_yield()
-    (args.out / "table1_yield.md").write_text(_md(t1, h1, r1) + "\n" + _md(t1b, h1b, r1b))
+    t1, h1, r1, t1b, h1b, r1b = data_yield()
+    (args.out / "table_yield.md").write_text(_md(t1, h1, r1) + "\n" + _md(t1b, h1b, r1b))
     if not args.no_png:
         save_table_png(
-            args.out / "table1_yield.png", t1, h1, r1,
+            args.out / "table_yield.png", t1, h1, r1,
             col_widths=[0.8, 1.0, 1.0, 1.1, 1.1],
         )
         save_table_png(
-            args.out / "table1_bias.png", t1b, h1b, r1b,
+            args.out / "table_bias.png", t1b, h1b, r1b,
             col_widths=[1.2, 2.2, 1.4],
         )
 
-    t2, h2, r2, note2 = data_table2_exp1()
-    (args.out / "table2_exp1.md").write_text(_md(t2, h2, r2, note=note2))
+    t2, h2, r2, note2 = data_exp1_profit()
+    (args.out / "table_exp1_profit.md").write_text(_md(t2, h2, r2, note=note2))
     if not args.no_png:
         save_table_png(
-            args.out / "table2_exp1.png", t2, h2, r2, note=note2,
+            args.out / "table_exp1_profit.png", t2, h2, r2, note=note2,
             col_widths=[2.8, 1.3, 1.4, 1.4],
         )
 

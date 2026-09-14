@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from swat_gym.env import (DEFAULT_PLAN, N_YEARS, SPINUP, decode_year, evaluate, time_sim)
+from swat_gym.env import DEFAULT_PLAN, N_YEARS, SPINUP, decode_year, time_sim
 from swat_gym.fastrunner import FastRunner
 from swat_gym.monthly import (MONTHLY_I_DIM, annual_to_monthly, default_monthly_i_free,
                               default_monthly_irr, encode_monthly_depths,
@@ -132,10 +132,11 @@ def test_experiment_scorers_require_explicit_max_n():
         )
 
 
-def test_arms_include_all():
-    from swat_gym.env import ARMS, ACTION_DIM, arm_dims
-    assert "all" in ARMS
-    assert len(arm_dims("all")) == ACTION_DIM
+def test_arms_are_exactly_the_two_live_levers():
+    """Scope reduced to two levers 2026-09-09. A combination arm reappearing here means an
+    experiment was restored without the rotation-bias reasoning being revisited."""
+    from swat_gym.env import ARMS
+    assert set(ARMS) == {"baseline", "N", "I"}
 
 
 MEASURED_MANURE_MG = 234.4      # GRACEnet 2013/14/18/19: 43.8 + 48.0 + 88.3 + 54.3

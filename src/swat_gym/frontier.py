@@ -29,8 +29,11 @@ from collections.abc import Iterable, Sequence
 
 import numpy as np
 
-#: Market-price arm: the placeholder ``DEFAULT_WATER``. Always reported alongside any sweep.
-SCORED_WATER = 0.41
+from .rewarders import DEFAULT_WATER
+
+#: Market-price arm: the sourced ``DEFAULT_WATER`` (WD01 rental + Schedule 24 pumping).
+#: Always reported alongside any sweep.
+SCORED_WATER = DEFAULT_WATER
 #: Profit-only arm.
 SCORED_NO3 = 0.0
 
@@ -117,7 +120,7 @@ def crossing(a: Sequence[dict], b: Sequence[dict], *, axis: str = "water",
 
     Profit is linear in the price, so this is exact. ``None`` means the advantage does not
     depend on that price (identical usage) or never reverses — report it as "holds for any
-    price", which converts an unsourced placeholder into a bounded claim.
+    price", which makes the claim independent of the scored price's provenance.
     """
     key = "irrigation_mm" if axis == "water" else "no3"
     scored = scored_water if axis == "water" else scored_no3

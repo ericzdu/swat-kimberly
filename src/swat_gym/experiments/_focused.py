@@ -42,7 +42,7 @@ Prices are the 2022-24 average vector (:func:`~swat_gym.rewarders.average`), fix
 three experiments. Everything outside the arm sits at measured practice via ``DEFAULT_PLAN``.
 For Exp 1 and 3 that pins irrigation **against the ``default`` row** — water cost is the same
 constant in ``default``, ``fixed``, ``policy`` and ``frozen``, so it cannot move comparisons
-among them and the unsourced ``DEFAULT_WATER`` placeholder is neutralised there. It is *not*
+among them and the scored ``DEFAULT_WATER`` is neutralised there. It is *not*
 the same constant in ``measured``, which irrigates on its own irregular record; that is one of
 the reasons ``measured`` is a context row rather than the denominator. Exp 2 has no such
 protection and needs a real district rate.
@@ -204,15 +204,13 @@ def _load_partial(path: Path | None, cfg: dict):
 
 
 def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
-                   partial_path: Path | None = None, cfg: dict | None = None,
-                   x0=None):
+                   partial_path: Path | None = None, cfg: dict | None = None):
     """CMA-ES over the arm's free parameters, checkpointing the strategy as it goes.
 
-    ``x0`` is the search start point, defaulting to :func:`~swat_gym.env.default_free`. Exp 4
-    passes the composed single-lever optimum here: a warm start that is computed and then not
-    handed to the optimizer is worse than none, because the artefact records a warm start that
-    never happened and rule 8 ("joint < composed ⇒ optimizer, not interaction") is then read
-    against a search that never saw the composed point.
+    The search always starts from :func:`~swat_gym.env.default_free` — measured practice on the
+    arm's own dimensions. The ``x0`` warm-start parameter was removed on **2026-09-09** with
+    Exp 4: it existed solely so the joint search could start from the composed single-lever
+    optimum, and with no joint arm there is nothing to compose.
 
     ``evals`` is the **total** budget. A resume restores the pickled
     :class:`cma.CMAEvolutionStrategy` — covariance and step size included — so it finishes at
@@ -249,11 +247,7 @@ def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
                 "train_obj": -best_f, "x": list(map(float, best_x)),
             }))
 
-        start = default_free(arm) if x0 is None else np.asarray(x0, dtype=float)
-        if start.shape != default_free(arm).shape:
-            raise ValueError(
-                f"warm start has shape {start.shape}, arm {arm!r} expects "
-                f"{default_free(arm).shape} free parameters")
+        start = default_free(arm)
         best, n_evals, history = minimise(score, start, evals=evals, seed=seed,
                                           state=state, on_generation=checkpoint)
         # Engine runs spent before this process started, at one run per window per evaluation.
@@ -379,8 +373,9 @@ def _water_breakeven(a: list[dict], b: list[dict], prices: Prices) -> dict:
     Profit is linear in the water price, so the advantage at price *p* is
     ``(A - B) - p * (mm_A - mm_B)`` where A, B are profits at the scored price with its water
     term added back. The root is exact arithmetic on stored rows — no engine involved — which
-    is the point: it converts a result that depends on the unsourced ``DEFAULT_WATER``
-    placeholder into a statement of the form "this holds for any price below X".
+    is the point: it converts a result that depends on the scored ``DEFAULT_WATER`` into a
+    statement of the form "this holds for any price below X", covering the sourced
+    ``WATER_PRICE_RANGE`` without another engine run.
     """
     adv = mean(a) - mean(b)
     dmm = float(np.mean([r["irrigation_mm"] for r in a])
@@ -392,6 +387,31 @@ def _water_breakeven(a: list[dict], b: list[dict], prices: Prices) -> dict:
     return {"scored_price": prices.water, "delta_mm": dmm,
             "breakeven": float(prices.water + adv / dmm),
             "note": "advantage vanishes at this $/mm/ha; sign of delta_mm gives the direction"}
+
+
+def model_digest() -> str:
+    """Digest of the calibrated model inputs, for keying any resumable artefact.
+
+    ``_cfg_key`` covers everything the training objective depends on *in code*. The model
+    parameters on disk are equally part of the objective and were **not** covered, so a
+    config-identical invocation resumed straight across a recalibration. Measured 2026-09-11:
+    after the refit, ``rerun_exp1.sh`` completed stage 3 in **three minutes** — it reused the
+    2026-08-29 CMA plan and all three PPO policies, which had been searched on the *pre-refit*
+    model, and merely re-scored them. The log said ``exit=0`` and the artefact looked complete.
+
+    That is the failure hard rule 2 names: a difference between what was searched and what was
+    scored, invisible in the result. Hashing ``params.CALIBRATABLE`` closes it, because that is
+    exactly the set a calibration or a port writes.
+    """
+    from swat_gym.fastrunner import TXTINOUT
+    from swat_gym.params import CALIBRATABLE
+
+    h = hashlib.sha256()
+    for name in sorted(CALIBRATABLE):
+        path = TXTINOUT / name
+        h.update(name.encode())
+        h.update(path.read_bytes() if path.is_file() else b"<absent>")
+    return h.hexdigest()[:10]
 
 
 def _cfg_key(cfg: dict) -> str:
@@ -442,7 +462,7 @@ def _max_n_arg(text: str) -> float | None:
     return v if v > 0 else None
 
 
-def run(arm: str, out_path: Path, argv=None, *, x0=None) -> dict:
+def run(arm: str, out_path: Path, argv=None) -> dict:
     ap = argparse.ArgumentParser()
     ap.add_argument("--budget", type=int, default=300_000,
                     help="engine runs, matched across PPO and CMA-ES "
@@ -494,11 +514,7 @@ def run(arm: str, out_path: Path, argv=None, *, x0=None) -> dict:
     # the widened observation — are each invisible in the argument list. `obs_dim` in particular
     # must be here: a stale PPO policy with a 7-wide input silently loads against an 11-wide
     # space. Keying on the values themselves means no one has to remember to bump a revision.
-    # The warm start is part of the question, so it is part of the checkpoint key: a cold
-    # partial must never be resumed into a warm run, or the reported start point is fiction.
-    x0_key = None if x0 is None else [round(float(v), 6) for v in np.asarray(x0).ravel()]
     cfg = {"arm": arm, "budget": args.budget, "seed": args.seed, "max_n": max_n,
-           "x0": x0_key,
            "no3_price": args.no3_price, "fixed_windows": fixed_windows,
            "prices": prices.label, "fert_op": prices.fert_op, "manure": prices.manure,
            "obs_dim": OBS_DIM, "irr_eff": IRR_EFF,
@@ -537,7 +553,7 @@ def run(arm: str, out_path: Path, argv=None, *, x0=None) -> dict:
         pp = _stage(args.out, "fixed").with_suffix(".partial.pkl")
         x, n_evals, fixed_runs, cma_history = optimize_fixed(
             arm, fixed_windows, evals, args.seed, prices, args.no3_price,
-            max_n, partial_path=pp, cfg=cfg, x0=x0)
+            max_n, partial_path=pp, cfg=cfg)
         _save_stage(args.out, "fixed", cfg,
                     {"x": list(map(float, x)), "n_evals": n_evals,
                      "engine_runs": fixed_runs, "seconds": time.time() - t0,
@@ -624,7 +640,6 @@ def run(arm: str, out_path: Path, argv=None, *, x0=None) -> dict:
     summary = {
         "arm": arm, "prices": prices.label, "budget_engine_runs": args.budget,
         "max_n": max_n, "no3_price": args.no3_price, "fert_op": prices.fert_op,
-        "warm_start": x0_key is not None,
         "train_years": TRAIN_YEARS, "test_years": TEST_YEARS,
         "fixed_windows": fixed_windows,
         "cma_evals": n_evals, "cma_engine_runs": fixed_runs, "ppo_timesteps": args.budget,
@@ -669,7 +684,7 @@ def run(arm: str, out_path: Path, argv=None, *, x0=None) -> dict:
         "ppo_seeds": seeds, "representative_seed": rep, "across_seeds": seed_stats,
         # Profit is linear in every price, so the water price at which the policy's advantage
         # vanishes is arithmetic on stored rows rather than a rerun. Reporting the breakeven is
-        # what lets an unsourced placeholder (DEFAULT_WATER) stop being load-bearing.
+        # what lets the scored price (DEFAULT_WATER) stop being load-bearing.
         "water_breakeven": _water_breakeven(policy_test, fixed_test, prices),
         "best_frozen_window": best_frozen,
         "frozen_means": {str(k): v for k, v in frozen_means.items()},

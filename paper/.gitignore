@@ -1,0 +1,12 @@
+# LaTeX build artefacts
+main.pdf
+main.log
+main.blg
+main.bbl
+main.aux
+main.xdv
+main.out
+# stale Overleaf bundle; regenerate from the sources here
+swat-kimberly-ipa-overleaf.zip
+# unmodified CTAN downloads (els-cas-templates, elsarticle); the two files main.tex needs are copied beside it
+templates/

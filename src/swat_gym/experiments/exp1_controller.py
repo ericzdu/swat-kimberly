@@ -135,7 +135,7 @@ def main(argv=None) -> dict:
                     help="$/kg N on leached nitrate; must match the arm this row is "
                          "compared against or the comparison is meaningless")
     ap.add_argument("--water-price", type=float, default=None,
-                    help="$/mm/ha override for the placeholder DEFAULT_WATER")
+                    help="$/mm/ha override for DEFAULT_WATER (sourced composite)")
     ap.add_argument("--out", type=Path, default=OUT)
     args = ap.parse_args(argv)
 
