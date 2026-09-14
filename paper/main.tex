@@ -99,7 +99,10 @@ nitrogen. At Kimberly, precipitation is far below potential evapotranspiration, 
 nearly all crop water is applied, while dairy manure supplies cheap nitrogen and
 elevates nitrate concern in groundwater. The two decisions couple through percolation:
 an irrigation schedule is also a leaching schedule. Models without hydrological
-transport cannot represent that coupling.
+transport cannot represent that coupling --- and the one prior SWAT-based RL
+environment removes it by assumption, taking ``no/negligible percolation and bypass
+flow exiting the soil profile at the bottom'' \citep{madondo2023}. A leaching objective
+needs an engine in which leaching can occur.
 
 What managers need is a strategy that performs well --- higher profit where the model
 is trustworthy, with resource use and leaching visible --- whether that strategy is a
@@ -160,24 +163,41 @@ Most report a single scalar reward, usually profit or yield, with resource use r
 after the fact if at all.
 
 \textbf{SWATgym and SWAT+.} \citet{madondo2023} introduced SWATgym, an OpenAI Gym
-environment for joint fertilizer and irrigation management whose dynamics are a Python
-reimplementation modeled after classic SWAT \citep{arnold2012} --- not the shipped
-Fortran executable or a practitioner \texttt{TxtInOut} tree. SWATgym established that
-SWAT-style hydrology--crop coupling is a useful RL testbed; our contribution is
-complementary: wrap \textbf{official SWAT+} rev 62.0.0 so strategies act through the
-same text inputs and the engine's own water and nitrate routing. We are not aware of a
-prior Gymnasium environment driven by the SWAT+ engine (Table~\ref{tbl:envs}).
+environment for joint fertilizer and irrigation management. Its dynamics are, in the
+authors' words, ``the first Python-based implementation of SWAT'' --- a
+reimplementation of a subset of classic SWAT \citep{arnold2012}, not the shipped Fortran
+executable or a practitioner \texttt{TxtInOut} tree. The paper states the subset
+explicitly: inputs ``applied uniformly and daily, over a single growing season
+(typically 120 days for corn)''; a ``homogeneous soil profile''; ``no/negligible
+percolation and bypass flow exiting the soil profile at the bottom; no lateral and base
+flow''; and no nutrient other than nitrogen. Corn is the only crop, and an episode runs
+from emergence to harvest with the soil state reset between episodes. SWATgym established
+that SWAT-style hydrology--crop coupling is a useful RL testbed, and those simplifications
+are what make it fast. They also remove exactly what this study needs: with percolation
+assumed away the leaching column is identically zero for every strategy, so a
+profit--leaching frontier cannot be drawn; with one season and one crop there is no
+manure carry-over, no perennial, and no multi-year soil-nitrogen state to calibrate
+against a measured trajectory; and with a hardcoded homogeneous soil there is no input
+file into which a site's measured profile, crop coefficients, or management record can be
+ported. Our contribution is therefore complementary rather than incremental: wrap
+\textbf{official SWAT+} rev 62.0.0 so strategies act through the same text inputs a
+hydrologist edits and the engine's own multilayer water and nitrate routing, over a
+seven-year rotation replayed from measured practice. The cost is that every evaluation
+is a full engine run (\S\ref{sec:protocol}); the return is that a leaching number exists
+to report, and that a schedule found here is a SWAT+ management file that can be run
+and audited outside the environment. We are not aware of a prior Gymnasium environment
+driven by the SWAT+ engine (Table~\ref{tbl:envs}).
 
 \begin{table*}[t]
 \caption{Crop-management RL environments (selected).}\label{tbl:envs}
-\begin{tabular*}{\tblwidth}{@{}LLLLL@{}}
+\begin{tabular*}{\tblwidth}{@{}>{\raggedright\arraybackslash}p{0.16\textwidth}>{\raggedright\arraybackslash}p{0.29\textwidth}>{\raggedright\arraybackslash}p{0.09\textwidth}>{\raggedright\arraybackslash}p{0.09\textwidth}>{\raggedright\arraybackslash}p{0.25\textwidth}@{}}
 \toprule
 Environment & Dynamics engine & Fertilizer / N & Irrigation & Hydrologic N routing \\
 \midrule
 CropGym \citep{overweg2021} & WOFOST / PCSE & \checkmark & --- & limited \\
 gym-DSSAT \citep{gautron2022} & DSSAT & \checkmark & \checkmark & crop-centric \\
 CyclesGym \citep{turchetta2022} & Cycles & \checkmark & \checkmark & limited \\
-SWATgym \citep{madondo2023} & Python reimplementation modeled after classic SWAT & \checkmark & \checkmark & as reimplemented \\
+SWATgym \citep{madondo2023} & Python reimplementation of a SWAT subset; one corn season & \checkmark & \checkmark & none: percolation and base flow assumed zero \\
 \textbf{This work} & \textbf{Official SWAT+ rev 62.0.0} (\texttt{TxtInOut}) & \checkmark & \checkmark & \textbf{present in engine} (validation bounded, \S\ref{sec:calibration}) \\
 \bottomrule
 \end{tabular*}
