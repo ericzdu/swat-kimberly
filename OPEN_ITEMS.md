@@ -20,12 +20,12 @@ Working checklist for PAPER.md. Not part of the manuscript.
    n = 7); application pass $37.07/ha from U of I BUL 1078 *Custom Rates for Idaho Agricultural
    Operations: 2025* ($15.00/acre, **n = 1**; Iowa $8.15/acre, n = 59, is the lower end — report
    the breakeven wherever the split count is load-bearing). Both replaced $5 defaults, so any
-   Exp 2 artefact dated before 2026-09-14 was priced in a different world. Water remains the
-   one placeholder: the field is in the Twin Falls Canal Company service area, so the number to
-   get is TFCC's per-share assessment converted to $/acre-ft.
-5. Trace the provenance of the GRACEnet nitrogen-uptake figures: 2015 alfalfa reads 147 kg ha⁻¹
-   against 607–667 from both models, suggesting the quantity is not comparable and should not be
-   used as a target until resolved.
+   Exp 2 artefact dated before 2026-09-14 was priced in a different world.
+5. ~~Trace the provenance of the GRACEnet nitrogen-uptake figures.~~ **Closed 2026-09-28 —
+   already answered in PROVENANCE §5b.** The sheet's own footnote: alfalfa uptake is *per
+   cutting* (147 kg ha⁻¹ is one cut of several against the models' whole-year 607–667) and
+   barley's is *grain only*. Not comparable as recorded, so it stays out of the targets
+   (`calib_report.GRACENET_NUPTAKE_RAW`) until cuttings and plant part are reconciled.
 6. Confirm whether the reference model's barley yield is grain or whole-plant.
 7. ~~Explain or bound the residual −11 % evapotranspiration gap.~~ **Superseded 2026-07-31.**
    Under rev 62 with `pet_co` calibrated to measured ETos the gap has changed sign and grown:
@@ -286,7 +286,12 @@ submission.
     resolved number is wanted, it needs more seeds, and the seed count needed should be
     estimated from the spread above before any cluster time is committed.
 
-17. **Manuscript sections for Exp 3/4 must come out** (scope cut 2026-09-09).
+17. ~~**Manuscript sections for Exp 3/4 must come out**~~ **Closed 2026-09-28.** Checked
+    `PAPER.md`: no Exp 3/4 result sections remain, rotation is held fixed and justified in §6.1
+    and sits in future work (§7), tables run A, 1–4 in order, and the abstract carries the Exp 1
+    headline (the `advantage_over_fixed` null, not the adaptivity mean). Its Exp 1 numbers are
+    still pre-refit — that is #18, not this item. Original text follows.
+    (Scope cut 2026-09-09.)
     Rotation and joint search are cut; `CLAUDE.md` Goal and `EXPERIMENTS.md` carry the full
     rationale. `PAPER.md` still needs: the Exp 3/4 result sections removed, the "levers in
     order" framing in §1/§3 reduced to two, Table numbering resequenced, and the abstract's
@@ -343,8 +348,12 @@ submission.
       "fit" made the model worse — where the true conditional optimum is 1992.1. `--hold` now
       excludes from the search, and the scored set is exactly the written set.
 
-19. **`runs/` is gitignored except two files, so an `--apply` can destroy the only record of the
-    previous fit.** `runs/calibration.json` was overwritten by the 2026-09-10 refit; the July
+19. ~~**`runs/` is gitignored except two files, so an `--apply` can destroy the only record of the
+    previous fit.**~~ **Closed 2026-09-28 — both remedies applied.** `.gitignore` now re-includes
+    `runs/calibration.json` (the pattern had to become `runs/*`: a negation cannot re-include a
+    file under an ignored directory, which is why the two existing exceptions had only ever been
+    tracked by force-add). `optimize.py` refuses, before the search, to overwrite an existing
+    `--out` without `--overwrite`; `--from-saved` never writes and needs no flag. Original text: `runs/calibration.json` was overwritten by the 2026-09-10 refit; the July
     fit survives only because it was copied to
     `runs/archive/calibration_2026-07-31_prereconciliation.json` first. Either track
     `runs/calibration.json` the way `exp1b_price_ratio.json` and `exp1c_cadence_e500.json` are

@@ -197,7 +197,16 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=ROOT / "runs" / "calibration.json")
     ap.add_argument("--from-saved", action="store_true",
                     help="re-score and apply the fit already in --out instead of refitting")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="allow a fitting run to replace an existing --out")
     args = ap.parse_args()
+
+    # Refuse *before* the search, not at write time: the 2026-09-10 refit overwrote
+    # runs/calibration.json, and the July fit survived only because it had been archived by hand.
+    # --from-saved never writes --out, so it needs no flag.
+    if not args.from_saved and args.out.exists() and not args.overwrite:
+        raise SystemExit(f"{args.out} already exists and holds the record of a previous fit. "
+                         f"Archive it (runs/archive/) and pass --overwrite, or pick another --out.")
 
     # Validate --hold *before* the search, not inside ``if args.apply``. A name that matches no
     # Param was silently ignored on the scoring path — ``p.name in args.hold`` just never fired —
