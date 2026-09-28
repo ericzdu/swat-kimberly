@@ -284,7 +284,10 @@ def append_irr_ops() -> None:
     df = pd.read_csv(IRR_CSV).rename(columns={"mm": "irrigation"})
     events = df[df.year <= SIM_END_YEAR].reset_index(drop=True)
     irr = (TIO / "irr.ops").read_text().rstrip("\n").splitlines()
+    existing = {ln.split()[0] for ln in irr[2:] if ln.strip()}
     for i, r in enumerate(events.itertuples(), start=1):
+        if f"gn{i:04d}" in existing:
+            continue
         amt = float(r.irrigation)
         irr.append(f"{f'gn{i:04d}':<22}{amt:>8.5f}{1.0:>14.5f}{0.0:>14.5f}{0.0:>14.5f}{0.0:>14.5f}{0.0:>14.5f}{0.0:>14.5f}  gracenet")
     (TIO / "irr.ops").write_text("\n".join(irr) + "\n")

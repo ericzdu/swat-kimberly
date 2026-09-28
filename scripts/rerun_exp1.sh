@@ -6,7 +6,7 @@
 # cap was worth +1,372 $/ha to the open-loop row; `policy - fixed` goes +377 -> -995 once the
 # objectives match. See runs/archive/capped_*/README.md.
 #
-# Run order is the locked one: foresight gate -> controller -> irrigation.
+# Run order is the locked one: foresight gate -> controller -> grower rule -> irrigation.
 #
 #   bash scripts/rerun_exp1.sh                # lambda_n = 0 correction
 #   NO3_PRICE=8  OUT_TAG=n8  bash scripts/rerun_exp1.sh
@@ -27,6 +27,9 @@ N_ENVS="${N_ENVS:-4}"
 # The controller is a 3-parameter fit: the archived run is within 0.01 % of its final value
 # by eval 217 of 504, so 2200 (220 evals) is convergence, not a corner cut.
 GATE_BUDGET="${GATE_BUDGET:-2200}"
+# Same three parameters as the controller, fitted to the logs instead of profit; 220 evals of
+# one 43-run rollout each (~9.5k engine runs).
+GROWER_EVALS="${GROWER_EVALS:-220}"
 # Dominates ceiling cost: one oracle optimisation per window, 15 windows.
 PER_WINDOW_BUDGET="${PER_WINDOW_BUDGET:-2000}"
 # The foresight gate is **independent of lambda_n**: exp1_ceiling scores every arm at
@@ -92,6 +95,22 @@ uv run python -m swat_gym.experiments.exp1_controller \
     --budget "$GATE_BUDGET" --no3-price "$NO3_PRICE" \
     ${OUT_TAG:+--out "runs/exp1_controller${suffix}.json"} >> "$LOG" 2>&1
 log "controller exit=$?"
+
+log "=== 2b/3 grower rule (exp1_grower_rule) ==="
+# The growers' logged irrigation as a fitted feedback rule: the human bar that can respond to
+# each window's weather, beside the verbatim replay. The *fit* never sees a price, so a frontier
+# point reuses the untagged fit and only re-scores; the untagged run refits on the current model.
+# Exit 3 means the fitted rule missed the logged total by more than 1 % (rule 5) and was not scored.
+if [ -n "$OUT_TAG" ] && [ -f runs/exp1_grower_rule.json ]; then
+    uv run python -m swat_gym.experiments.exp1_grower_rule \
+        --from-fit runs/exp1_grower_rule.json --no3-price "$NO3_PRICE" \
+        --out "runs/exp1_grower_rule${suffix}.json" >> "$LOG" 2>&1
+else
+    uv run python -m swat_gym.experiments.exp1_grower_rule \
+        --evals "$GROWER_EVALS" --no3-price "$NO3_PRICE" \
+        ${OUT_TAG:+--out "runs/exp1_grower_rule${suffix}.json"} >> "$LOG" 2>&1
+fi
+log "grower rule exit=$?"
 
 log "=== 3/3 irrigation (CMA re-optimised uncapped + PPO seeds + frozen) ==="
 uv run python -m swat_gym.experiments.exp1_irrigation \

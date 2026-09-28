@@ -66,7 +66,7 @@ def score_openloop(x, test, prices, no3_price, label: str, max_n=None):
     return _agg(rows, ylds)
 
 
-def score_controller(abc, test, prices, no3_price):
+def score_controller(abc, test, prices, no3_price, label: str = "controller"):
     rows, ylds = [], []
     with FastRunner() as runner:
         for sy in test:
@@ -75,7 +75,7 @@ def score_controller(abc, test, prices, no3_price):
             y = runner.yields()
             rows.append(_row(d, sy))
             ylds.append(float(y["yld(t)"].sum()) if len(y) else 0.0)
-            print(f"  controller {sy} profit={d['profit']:.0f}", flush=True)
+            print(f"  {label} {sy} profit={d['profit']:.0f}", flush=True)
     return _agg(rows, ylds)
 
 
@@ -198,6 +198,9 @@ def main() -> None:
     fixed_x = np.asarray(full["fixed_x"], dtype=float)
     default_x = default_monthly_i_free()
     abc = ctrl["abc"]
+    grower_fit = json.loads((RUNS / "exp1_grower_rule.json").read_text())
+    if not grower_fit.get("fit", {}).get("gate_pass"):
+        raise SystemExit("exp1_grower_rule.json failed its rule 5 gate; refit before tabulating")
 
     if args.skip_openloop:
         # The cached numbers that used to live here were produced under the nitrogen-cap
@@ -215,6 +218,8 @@ def main() -> None:
         fixed = score_openloop(fixed_x, test, prices, no3_price, "fixed")
         print("=== controller ===", flush=True)
         controller = score_controller(abc, test, prices, no3_price)
+        print("=== grower rule ===", flush=True)
+        grower = score_controller(grower_fit["abc"], test, prices, no3_price, "grower")
 
     print(f"=== PPO seed {rep} ===", flush=True)
     model = PPO.load(str(RUNS / f"exp1_irrigation_ppo_s{rep}.zip"))
@@ -253,7 +258,8 @@ def main() -> None:
                             no3_price, "frozen")
 
     strategies = [
-        {"strategy": "Measured practice", **measured},
+        {"strategy": "Logged schedule (replayed)", **measured},
+        {"strategy": "Grower rule (fitted to logs)", **grower},
         {"strategy": "Generated monthly default", **default},
         {"strategy": "CMA-ES open-loop", **fixed},
         {"strategy": "CMA feedback controller", **controller},

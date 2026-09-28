@@ -17,12 +17,13 @@ Lives in `src/swat_gym/`. Sibling to `../rufas-gym` and `../aquaswat-gym`.
 | 3. Monthly open-loop | Apr–Sep depths; nest annual default | `monthly.py` |
 | 4. Foresight gate | perfect foresight vs shared schedule (an *estimate*, not a ceiling) | `exp1_ceiling` |
 | 5. Feedback controller | CMA closed-loop row | `exp1_controller` |
+| 5b. Grower rule | the logs as a fitted feedback rule — the human bar on any weather | `exp1_grower_rule` |
 | 6. Monthly gym + Exp 1–2 | adaptivity under monthly MDP | `monthly_env.py` + `exp1`, `exp2` |
 
 ## Execution order (locked = paper numbering)
 
 ```
-pytest → exp1_ceiling → exp1_controller → exp1_irrigation → exp2_nitrogen
+pytest → exp1_ceiling → exp1_controller → exp1_grower_rule → exp1_irrigation → exp2_nitrogen
 ```
 
 Do **not** start cluster PPO if `exp1_ceiling` reports `gate_pass: false` — `rerun_exp1.sh`
@@ -43,13 +44,23 @@ estimate and the bootstrap interval clear the 250 noise floor; the ESS interval'
 
 | Row | Meaning |
 |---|---|
-| `measured` | shipped `management.sch` — human bar |
+| `measured` | shipped `management.sch`, the 2013–19 log **replayed verbatim** on each window |
+| `grower` | the same behaviour as a fitted rule — the human bar that can respond to weather |
 | `default` | `DEFAULT_PLAN` through the same generator |
 | `fixed` | CMA-ES open-loop (monthly for Exp 1) |
 | `policy` | PPO |
 | `frozen` | policy’s plan selected on **train**, replayed on **test** |
 
 Plus Exp 1 extras: **ceiling** (perfect foresight) and **controller** (CMA feedback).
+
+**Why two human rows (added 2026-09-28).** Only the 2012-start window runs the log on its own
+weather, and that window is the train/test buffer. Every other window replays the growers'
+schedule on weather it never responded to, which strips out whatever adaptation they had. The
+`grower` row fits the controller's three parameters to the logged monthly depths on 2013–19
+weather (never to profit), gates the fit at 1 % of the logged 3,938.8 mm (rule 5), and runs the
+frozen rule on every window. The fit years overlap the test years; that is disclosed, and the
+row is a reference, never a learned arm. Exp 2 re-scores the same fitted rule, so it needs
+`runs/exp1_grower_rule.json` first.
 
 ## Experiments
 
@@ -60,12 +71,14 @@ uv run python -m swat_gym.experiments.exp1_ceiling --budget 5000
 # or the whole Exp 1 pipeline, detached, with the objective-parity preflight:
 #   perl -e 'use POSIX; setsid(); exec @ARGV' -- bash scripts/rerun_exp1.sh
 uv run python -m swat_gym.experiments.exp1_controller --budget 5000
+uv run python -m swat_gym.experiments.exp1_grower_rule --evals 220
 uv run python -m swat_gym.experiments.exp1_irrigation --budget 300000 --ppo-seeds 3
 # open-loop only after failed gate:
 uv run python -m swat_gym.experiments.exp1_irrigation --budget 300000 --skip-ppo
 ```
 
-Outputs: `runs/exp1_ceiling.json`, `runs/exp1_controller.json`, `runs/exp1_irrigation.json`.
+Outputs: `runs/exp1_ceiling.json`, `runs/exp1_controller.json`, `runs/exp1_grower_rule.json`,
+`runs/exp1_irrigation.json`.
 
 ### Exp 2 — Nitrogen
 

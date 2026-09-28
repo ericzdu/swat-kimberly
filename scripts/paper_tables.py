@@ -244,6 +244,8 @@ def data_exp1_profit() -> tuple[str, list[str], list[list[str]], str]:
     ceiling = json.loads((RUNS / "exp1_ceiling.json").read_text())
     openloop = json.loads((RUNS / "exp1_irrigation_openloop.json").read_text())
     controller = json.loads((RUNS / "exp1_controller.json").read_text())
+    grower_path = RUNS / "exp1_grower_rule.json"
+    grower = json.loads(grower_path.read_text()) if grower_path.is_file() else None
     full_path = RUNS / "exp1_irrigation.json"
     full = json.loads(full_path.read_text()) if full_path.is_file() else None
 
@@ -253,7 +255,14 @@ def data_exp1_profit() -> tuple[str, list[str], list[list[str]], str]:
 
     headers = ["Row", "Test profit", "vs measured", "vs default"]
     rows: list[list[str]] = [
-        ["Measured practice", _fmt(mp["measured_test"]), "0", "—"],
+        ["Logged schedule (replayed)", _fmt(mp["measured_test"]), "0", "—"],
+        [
+            "Grower rule (fitted to logs)",
+            _fmt(grower["test"]) if grower and grower.get("scored") else "—*",
+            _fmt(grower["test"] - mp["measured_test"])
+            if grower and grower.get("scored") else "—*",
+            "—",
+        ],
         [
             "Generated monthly default",
             _fmt(mp["default_test"]),

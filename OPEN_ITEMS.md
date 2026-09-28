@@ -359,3 +359,19 @@ submission.
     `runs/calibration.json` the way `exp1b_price_ratio.json` and `exp1c_cadence_e500.json` are
     re-included by `.gitignore`, or make `optimize.py --apply` refuse to overwrite an existing
     `--out` without an explicit flag. Currently neither is true.
+
+20. **The human bar was the log replayed on weather it never saw (found 2026-09-28).**
+    `score_measured()` rewrites only `time.sim`, so every train and test window runs the
+    2013–19 schedule verbatim; the one window that matches the log to its own weather (start
+    2012) is the train/test buffer. A replay strips out whatever adaptation the growers had.
+    **Built:** `exp1_grower_rule` fits the controller's (a, b, c) to the logged monthly depths on
+    2013–19 weather, gates it at 1 % of 3,938.8 mm, and scores the frozen rule on every window.
+    Wired into `rerun_exp1.sh` after the controller, into Exp 2 (`_focused.score_grower`, which
+    re-scores the same fit), and into both table scripts. The replayed row stays, relabelled
+    "Logged schedule (replayed)".
+    **Still to do:** run it on the refit model (part of #18's chain), then fill the Table 3 row
+    and put the disclosure into §6.2: the fit uses test-period weather, is never fitted to profit,
+    and is a reference row. Report fit R² and per-year totals beside it — if three shared
+    parameters capture little of the growers' timing, that is the finding, not a reason to add
+    parameters.
+

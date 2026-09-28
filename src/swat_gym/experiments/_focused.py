@@ -6,7 +6,9 @@ so the machinery lives here once and each ``expN_*.py`` is an entry point that n
 Five rows, and two of them are controls
 ---------------------------------------
 ========================  =========================================================
-``measured``              the field's own shipped ``management.sch`` — the human bar
+``measured``              the field's own shipped ``management.sch``, replayed verbatim
+``grower``                the same behaviour as a fitted rule (:mod:`exp1_grower_rule`) — the
+                          human bar that can respond to each window's weather
 ``default``               **``DEFAULT_PLAN`` through the same schedule generator**
 ``fixed``                 best non-adaptive plan for this lever, CMA-ES
 ``policy``                PPO on the annual-cadence env
@@ -169,6 +171,36 @@ def score_measured(windows, prices: Prices, no3_price: float) -> list[dict]:
         for sy in windows:
             runner.run({"time.sim": time_sim(sy, N_YEARS + SPINUP)})
             out.append(_row(profit(runner, prices, no3_price=no3_price), sy))
+    return out
+
+
+#: The fitted grower rule, produced by :mod:`exp1_grower_rule`. Exp 2 re-scores it rather than
+#: refitting, so both experiments carry the *same* human rule.
+GROWER_FIT = ROOT / "runs" / "exp1_grower_rule.json"
+
+
+def score_grower(windows, prices: Prices, no3_price: float, max_n) -> list[dict]:
+    """The growers' irrigation as a fitted feedback rule (:mod:`exp1_grower_rule`), on each window.
+
+    The replayed log (:func:`score_measured`) is one fixed schedule on weather it never saw; this
+    is the same behaviour distilled into a rule that responds to each window's weather. Nitrogen
+    sits at ``DEFAULT_PLAN`` (measured practice) and ``max_n`` must match the other rows.
+    """
+    from .exp1_controller import rollout_controller   # exp1_controller imports this module
+
+    if not GROWER_FIT.is_file():
+        raise SystemExit(f"{GROWER_FIT.name} missing: run `python -m "
+                         "swat_gym.experiments.exp1_grower_rule` first (it is Exp 1's, and "
+                         "run order is paper order)")
+    fit = json.loads(GROWER_FIT.read_text())
+    if not fit.get("fit", {}).get("gate_pass"):
+        raise SystemExit(f"{GROWER_FIT.name} failed its rule 5 gate; refusing to score it")
+    out = []
+    with FastRunner() as runner:
+        for sy in windows:
+            out.append(_row(rollout_controller(fit["abc"], runner, start_year=sy,
+                                               prices=prices, no3_price=no3_price,
+                                               max_n=max_n), sy))
     return out
 
 
@@ -546,6 +578,21 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     print(f"DEFAULT_PLAN baseline (like-for-like): held-out {mean(default_test):.0f} $/ha "
           f"({mean(default_test) - mean(measured_test):+.0f} vs human)", flush=True)
 
+    # The replayed log is one fixed schedule on weather it never saw; the grower rule is the same
+    # behaviour as a rule that responds to each window. Keyed on the fitted parameters too, so a
+    # refit of the rule cannot resume into a stale row.
+    grower_abc = json.loads(GROWER_FIT.read_text())["abc"] if GROWER_FIT.is_file() else None
+    gcfg = {**cfg, "grower_abc": grower_abc}
+    stage = _load_stage(args.out, "grower", gcfg)
+    if stage is None:
+        grower_test = score_grower(TEST_YEARS, prices, args.no3_price, max_n)
+        grower_train = score_grower(fixed_windows, prices, args.no3_price, max_n)
+        _save_stage(args.out, "grower", gcfg, {"test": grower_test, "train": grower_train})
+    else:
+        grower_test, grower_train = stage["test"], stage["train"]
+    print(f"grower rule (fitted to the logs): held-out {mean(grower_test):.0f} $/ha "
+          f"({mean(grower_test) - mean(measured_test):+.0f} vs replayed log)", flush=True)
+
     stage = _load_stage(args.out, "fixed", cfg)
     if stage is None:
         # Resume from a partial if a previous attempt was killed mid-search. `evals` is the
@@ -649,6 +696,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
                     "total": round(time.time() - t0, 1)},
         "mean_profit": {
             "measured_train": mean(measured_train), "measured_test": mean(measured_test),
+            "grower_train": mean(grower_train), "grower_test": mean(grower_test),
             "default_train": mean(default_train), "default_test": mean(default_test),
             "fixed_train": mean(fixed_train), "fixed_test": mean(fixed_test),
             "policy_train": mean(policy_train), "policy_test": mean(policy_test),
@@ -668,12 +716,24 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
             "policy": mean(policy_test) - mean(measured_test),
             "frozen": frozen_means[best_frozen] - mean(measured_test),
         },
+        # The grower rule is the human bar that can respond to weather; `vs_measured` above is
+        # against the replayed log, which cannot.
+        "vs_grower": {
+            "default": mean(default_test) - mean(grower_test),
+            "fixed": mean(fixed_test) - mean(grower_test),
+            "policy": mean(policy_test) - mean(grower_test),
+        },
+        "grower_fit": {"abc": grower_abc, "source": GROWER_FIT.name,
+                       "note": "fitted to 2013-2019 logged behaviour; a reference row, "
+                               "not a learned arm"},
         # Every comparison with its per-window spread, so a difference can be read against the
         # noise instead of being quoted bare.
         "paired_test": {
             "default_vs_measured": paired(default_test, measured_test),
             "fixed_vs_default": paired(fixed_test, default_test),
             "fixed_vs_measured": paired(fixed_test, measured_test),
+            "grower_vs_measured": paired(grower_test, measured_test),
+            "fixed_vs_grower": paired(fixed_test, grower_test),
             "policy_vs_default": paired(policy_test, default_test),
             "policy_vs_fixed": paired(policy_test, fixed_test),
             "frozen_vs_policy": paired(frozen[best_frozen], policy_test),
@@ -688,7 +748,8 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
         "water_breakeven": _water_breakeven(policy_test, fixed_test, prices),
         "best_frozen_window": best_frozen,
         "frozen_means": {str(k): v for k, v in frozen_means.items()},
-        "per_window": {"measured_test": measured_test, "default_test": default_test,
+        "per_window": {"measured_test": measured_test, "grower_test": grower_test,
+                       "default_test": default_test,
                        "fixed_test": fixed_test, "policy_test": policy_test},
         "policy_plan": {str(sy): [(a.crop, round(a.manure_mg, 1),
                                    [(d, round(kg, 1)) for d, kg in a.fert_splits],
@@ -702,8 +763,10 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     m, v, vd = summary["mean_profit"], summary["vs_measured"], summary["vs_default"]
     print(f"\narm {arm}   prices {prices.label}   budget {args.budget} engine runs")
     print(f"{'':<26}{'train':>10}{'held-out':>11}{'vs default':>12}{'vs human':>11}")
-    print(f"{'measured practice':<26}{m['measured_train']:>10.0f}{m['measured_test']:>11.0f}"
-          f"{'—':>12}{'—':>11}")
+    print(f"{'logged schedule, replayed':<26}{m['measured_train']:>10.0f}"
+          f"{m['measured_test']:>11.0f}{'—':>12}{'—':>11}")
+    print(f"{'grower rule (fitted)':<26}{m['grower_train']:>10.0f}{m['grower_test']:>11.0f}"
+          f"{'—':>12}{m['grower_test'] - m['measured_test']:>+11.0f}")
     print(f"{'DEFAULT_PLAN baseline':<26}{m['default_train']:>10.0f}{m['default_test']:>11.0f}"
           f"{'—':>12}{v['default']:>+11.0f}")
     print(f"{'CMA-ES fixed schedule':<26}{m['fixed_train']:>10.0f}{m['fixed_test']:>11.0f}"
