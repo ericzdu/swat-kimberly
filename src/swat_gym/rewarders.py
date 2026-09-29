@@ -177,30 +177,88 @@ _NASS = {  # year: (alfalfa hay $/ton, barley $/bu, corn grain $/bu)
     2024: (154.00, 6.70, 5.80),
 }
 
-#: **PLACEHOLDER, not fetched.** Irrigation water in Idaho is priced by district and there is no
-#: national series; ~$50/acre-foot is a mid-range surface-district figure, which is
-#: $50 / 1233 m^3 x 10 m^3 = $0.41 per mm-ha. Override it with a real district rate before any
-#: result about the `I` arm is reported as agronomic advice.
-DEFAULT_WATER = 0.41
+# -- water: a sourced composite, $ per mm per ha ------------------------------------------
+#
+# The field is in the Twin Falls Canal Company tract (gravity diversion at Milner Dam). TFCC
+# charges a flat per-share assessment -- its IRS 990 shows ~$5.6M program-service revenue over
+# ~202,700 acres, ~$27/acre/yr -- so within the allotment the *marginal* cost of a mm from the
+# canal company is zero. What a mm actually costs at the margin is two things, both published:
+#
+# 1. **Opportunity cost: the Water District 1 rental pool.** *WD01 2025 Rental Pool
+#    Procedures* (IDWR) §5.3, rentals "for purposes above Milner": common-pool Tier 1 $25.18/af
+#    + 10 % Board surcharge + $1.30 administrative fee = **$29.00/af all-in**. Assigned-storage
+#    tiers 5-7 (§10.7) are $35 / $45 / $55 depending on whether the system fills. A shareholder
+#    can lease water at this price or forgo it by using it, which is the standard marginal value
+#    of water for a canal-company irrigator.
+# 2. **Pumping energy.** The field is sprinkler-irrigated from a ditch turnout. Idaho Power
+#    Schedule 24 (Agricultural Irrigation Service, effective 2026-01-01), secondary service,
+#    in-season: **6.7222 c/kWh** energy plus **$16.50/kW-month** demand. The tariff is exact;
+#    converting it to $/mm needs a head and an efficiency, and those two are assumptions stated
+#    here rather than measured: 45 m total dynamic head (a ~40 psi sprinkler plus lift and
+#    friction) at 0.65 wire-to-water efficiency, and a 60 % in-season load factor to spread the
+#    demand charge over kWh.
+#
+# The two sum to $0.43, which is where the old "~$50/acre-ft" placeholder ($0.41) happened to
+# sit -- so nothing scored before 2026-09-14 moves materially, but the number now has a
+# provenance. The sourced *range* is rental-only (furrow, or no pump) $0.235 up to Tier 7 plus
+# pumping $0.65; the frontier and `water_breakeven` machinery cover it at no engine cost.
 
-#: **ARBITRARY BY CONSTRUCTION.** $/Mg as applied, standing for the labour and haulage of
-#: getting manure onto the field -- loading, trucking, spreading -- rather than a purchase
-#: price. Dairy manure here is a disposal stream, so nobody buys it; what it costs is moving
-#: it. $5/Mg sits inside the usual $3-6/ton custom solid-manure haul-and-spread range, but it
-#: was chosen to be *representative*, not sourced, and it is the one number in this reward that
-#: makes no claim to being measured.
+M3_PER_ACRE_FOOT = 1233.48
+
+#: WD01 common-pool Tier 1, above Milner, 2025, all fees in. $/acre-foot.
+WD01_RENTAL_AF = 25.18 * 1.10 + 1.30          # = 29.00
+#: WD01 assigned-storage Tier 7 (system does not fill, no flow augmentation). The top of the
+#: published range.
+WD01_RENTAL_AF_TIER7 = 55.0
+
+WATER_RENTAL = WD01_RENTAL_AF / M3_PER_ACRE_FOOT * M3_PER_MM_HA     # 0.235 $/mm/ha
+
+#: Idaho Power Schedule 24, secondary, in-season, effective 2026-01-01.
+IPC_SCHED24_ENERGY_PER_KWH = 0.067222
+IPC_SCHED24_DEMAND_PER_KW_MONTH = 16.50
+#: Stated assumptions for the pumping conversion -- not measured on site.
+PUMP_HEAD_M = 45.0
+PUMP_EFFICIENCY = 0.65
+PUMP_LOAD_FACTOR = 0.60
+HOURS_PER_MONTH = 730.0
+
+#: kWh to lift 1 mm over 1 ha (10 m^3) through PUMP_HEAD_M: rho g V H / (3.6e6 eta).
+PUMP_KWH_PER_MM_HA = 9810.0 * M3_PER_MM_HA * PUMP_HEAD_M / (3.6e6 * PUMP_EFFICIENCY)  # 1.89
+WATER_PUMPING = PUMP_KWH_PER_MM_HA * (
+    IPC_SCHED24_ENERGY_PER_KWH
+    + IPC_SCHED24_DEMAND_PER_KW_MONTH / (HOURS_PER_MONTH * PUMP_LOAD_FACTOR))  # 0.198 $/mm/ha
+
+#: The scored water price: rental opportunity cost plus pumping. **Sourced 2026-09-14**; was
+#: the 0.41 placeholder before that.
+DEFAULT_WATER = WATER_RENTAL + WATER_PUMPING                                  # 0.433
+
+#: Sourced range for the water axis, $/mm/ha: rental only (no pump) to Tier 7 plus pumping.
+WATER_PRICE_RANGE = (WATER_RENTAL,
+                     WD01_RENTAL_AF_TIER7 / M3_PER_ACRE_FOOT * M3_PER_MM_HA + WATER_PUMPING)
+
+#: Manure haul-and-spread, $/Mg as applied. **Sourced 2026-09-14**: Iowa State University
+#: Extension, *2026 Iowa Farm Custom Rate Survey* (Ag Decision Maker A3-10, Johanns, March
+#: 2026), "Loading, spreading solid manure": **$7.20 per ton**, median $6.50, range $5-9, n = 7,
+#: labour, fuel and equipment included, materials not. $7.20 / 0.907185 = $7.94/Mg. It stands for
+#: the labour and haulage of getting manure onto the field -- loading, trucking, spreading --
+#: rather than a purchase price, because dairy manure here is a disposal stream that nobody buys.
 #:
-#: It was zero until now, and that mattered in two directions worth recording:
+#: Iowa, not Idaho: the site-state survey (U of I BUL 1078, 2025) has no manure row at all, and
+#: its one trucking figure ($10/ton, n = 1) is not a spreading rate. The Iowa row is the only
+#: surveyed custom rate for exactly this operation, so it is used and its origin is stated.
+#:
+#: It was $5.00 (representative, unsourced) from 2026-08 to 2026-09-14 and zero before that, and
+#: both moves matter in the same two directions:
 #:
 #: * The earlier manure null (+162 $/ha, `runs/exp1_nitrogen.json` lineage) was measured with
 #:   manure **free**, the case most favourable to applying it. A positive cost only makes
 #:   manure less attractive, so that null survives -- it gets stronger, not weaker.
 #: * It **lowers the human bar**, because measured practice is manure-only: the shipped
-#:   schedule hauls 234.4 Mg/ha over the rotation, which is ~$1,172/ha at this price. An
+#:   schedule hauls 234.4 Mg/ha over the rotation, which is ~$1,860/ha at this price. An
 #:   optimizer that can substitute mineral N pays far less of that. So every "vs human" delta
-#:   widens for a reason that is this arbitrary number, not management skill. Any result that
-#:   moves materially with it must be reported as contingent on it.
-DEFAULT_MANURE = 5.0
+#:   widens for a reason that is this number, not management skill. Any result that moves
+#:   materially with it must be reported with its breakeven.
+DEFAULT_MANURE = 7.20 / 0.907185
 
 #: Mineral N, $/kg N. **Sourced**, unlike the two above: USDA AMS reported urea at $644/short
 #: ton on average for the Inter-Mountain West in the week ending 2025-04-04 -- the regional
@@ -212,22 +270,28 @@ DEFAULT_MANURE = 5.0
 #: And it is a *weekly regional average*, not a marketing-year average like the crop series.
 #: Both errors point the same way -- N is cheaper here than a consistent vector would make it
 #: -- which is the case most favourable to buying nitrogen, so an `N` null under this default
-#: is a strong null, the same logic that puts :data:`DEFAULT_MANURE` at zero.
+#: is a strong null, the same logic under which :data:`DEFAULT_MANURE` was long held at zero.
 DEFAULT_FERT_N = 644.0 / (2000.0 * 0.46 * 0.453592)
 
-#: Cost of one fertiliser *application pass*, $/ha. Borrowed from CyclesGym 2.0 §2.5, which
-#: uses $5.0/ha/event as a "soft constraint that naturally penalises excessive fertilisation
-#: frequency" instead of a hard limit on application count. That framing is the right one and
-#: is why this exists: **without a per-event charge, splitting nitrogen is free**, so any
-#: optimizer prefers unlimited applications and the question "how many passes are worth it"
-#: has no answer.
+#: Cost of one fertiliser *application pass*, $/ha, materials not included. **Sourced
+#: 2026-09-14**: University of Idaho Extension, *Custom Rates for Idaho Agricultural
+#: Operations: 2025* (BUL 1078, Wilder, Field & Hatzenbuehler, August 2025), Table 2 "Dry
+#: Fertilizer Application": **$15.00 per acre**, n = 1 (north region). $15.00 / 0.404686 =
+#: $37.07/ha. The comparable Iowa figure (ISU *2026 Iowa Farm Custom Rate Survey*, "Dry bulk -
+#: applied") is $8.15/acre = $20.14/ha, median $8.00, range $4.00-13.50, n = 59; Idaho's own
+#: liquid-application row is $12.69/acre (n = 8, range 9.50-15.00). The site-state value is
+#: used because it is the site-state value, and it is a single response: treat the Iowa
+#: figure as the lower end and report the breakeven wherever the pass count is load-bearing.
 #:
-#: Their $5/ha looks low — US custom-application rates for broadcast dry fertiliser run about
-#: $8-10/acre, i.e. **$20-25/ha**. Their figure is kept as the default so the comparison to
-#: the paper is direct, but it is the conservative end: a low pass cost favours *more* splits,
-#: so a result showing few splits are optimal under $5/ha is the stronger version of that
-#: result. Vary it if the cadence knee turns out to sit against it.
-DEFAULT_FERT_OP = 5.0
+#: Why the term exists at all is from CyclesGym 2.0 §2.5, which charges $5.0/ha/event as a
+#: "soft constraint that naturally penalises excessive fertilisation frequency" instead of a
+#: hard limit on application count. That framing is the right one: **without a per-event
+#: charge, splitting nitrogen is free**, so any optimizer prefers unlimited applications and
+#: the question "how many passes are worth it" has no answer. Their $5 was the default here
+#: until 2026-09-14; it is 4-7x below any surveyed custom rate. A *low* pass cost favours more
+#: splits, so a result showing few splits are optimal was stronger under $5 than it is under
+#: $37 -- state that direction whenever the split count is reported.
+DEFAULT_FERT_OP = 15.00 / 0.404686
 
 
 def nass(year: int, *, water: float = DEFAULT_WATER, manure: float = DEFAULT_MANURE,

@@ -46,8 +46,22 @@ def _fmt(x: float | None, digits: int = 0) -> str:
     return f"{x:.{digits}f}"
 
 
-def _paired(mean: float, se: float) -> str:
-    return f"{mean:+,.0f} ± {se:,.0f}"
+def _paired(p: dict) -> str:
+    """``mean ± se`` where the s.e. is the ESS one — the only one rule 7 permits in the paper.
+
+    Held-out windows overlap by up to seven of their eight years, so ``se_naive`` (kept in the
+    artefact for comparison) claims about twice the precision the split bought. Reading
+    ``p["se"]`` raises ``KeyError`` on purpose: any artefact still carrying that key predates
+    the fix and its intervals must not be published.
+    """
+    return f"{p['mean']:+,.0f} ± {p['se_ess']:,.0f}"
+
+
+def _ess_note(p: dict) -> str:
+    """The sentence that has to travel with every interval in the paper (rule 7)."""
+    return (f"± is one standard error over the n = {p['n']} held-out windows, divided by the "
+            f"effective sample size {p['ess']:.2f} rather than by n: the windows are eight "
+            f"years long and start one year apart, so they are not independent draws.")
 
 
 def _md(title: str, headers: list[str], rows: list[list[str]], note: str = "") -> str:
@@ -175,7 +189,7 @@ def data_env_compare() -> tuple[str, list[str], list[list[str]]]:
     return title, headers, rows
 
 
-def data_table1_yield():
+def data_yield():
     base = json.loads(BASELINE.read_text())
     sim = {int(r["year"]): r for r in base["yields"]}
 
@@ -226,10 +240,12 @@ def data_table1_yield():
     )
 
 
-def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
+def data_exp1_profit() -> tuple[str, list[str], list[list[str]], str]:
     ceiling = json.loads((RUNS / "exp1_ceiling.json").read_text())
     openloop = json.loads((RUNS / "exp1_irrigation_openloop.json").read_text())
     controller = json.loads((RUNS / "exp1_controller.json").read_text())
+    grower_path = RUNS / "exp1_grower_rule.json"
+    grower = json.loads(grower_path.read_text()) if grower_path.is_file() else None
     full_path = RUNS / "exp1_irrigation.json"
     full = json.loads(full_path.read_text()) if full_path.is_file() else None
 
@@ -239,23 +255,30 @@ def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
 
     headers = ["Row", "Test profit", "vs measured", "vs default"]
     rows: list[list[str]] = [
-        ["Measured practice", _fmt(mp["measured_test"]), "0", "—"],
+        ["Logged schedule (replayed)", _fmt(mp["measured_test"]), "0", "—"],
+        [
+            "Grower rule (fitted to logs)",
+            _fmt(grower["test"]) if grower and grower.get("scored") else "—*",
+            _fmt(grower["test"] - mp["measured_test"])
+            if grower and grower.get("scored") else "—*",
+            "—",
+        ],
         [
             "Generated monthly default",
             _fmt(mp["default_test"]),
-            _paired(paired["default_vs_measured"]["mean"], paired["default_vs_measured"]["se"]),
+            _paired(paired["default_vs_measured"]),
             "0",
         ],
         [
             "CMA-ES open-loop (fixed)",
             _fmt(mp["fixed_test"]),
             "—",
-            _paired(paired["fixed_vs_default"]["mean"], paired["fixed_vs_default"]["se"]),
+            _paired(paired["fixed_vs_default"]),
         ],
         ["CMA feedback controller", _fmt(controller["test"]), "—", "—"],
         [
             "Ceiling (oracle − shared)",
-            _paired(ceil["mean"], ceil["se"]),
+            _paired(ceil),
             "—",
             "—",
         ],
@@ -269,7 +292,7 @@ def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
             ["Policy − fixed", _fmt(full.get("advantage_over_fixed")), "", ""],
             ["Policy − frozen (adaptivity)", _fmt(full.get("adaptivity_value")), "", ""],
         ]
-        note = ""
+        note = _ess_note(paired["fixed_vs_default"])
     else:
         rows += [
             ["PPO policy", "—*", "—*", "—*"],
@@ -279,9 +302,10 @@ def data_table2_exp1() -> tuple[str, list[str], list[list[str]], str]:
         ]
         note = (
             "*TODO: fill from runs/exp1_irrigation.json "
-            "(3 PPO seeds; mean ± SE for advantage and adaptivity)."
+            "(3 PPO seeds; mean ± SE for advantage and adaptivity). "
+            + _ess_note(paired["fixed_vs_default"])
         )
-    title = "Table 2. Exp 1 test profit ($/ha), window starts 2013–2017."
+    title = "Exp 1 test profit ($/ha), window starts 2013–2017."
     return title, headers, rows, note
 
 
@@ -300,23 +324,23 @@ def main() -> None:
             col_widths=[2.6, 3.0, 1.1, 0.9, 1.4],
         )
 
-    t1, h1, r1, t1b, h1b, r1b = data_table1_yield()
-    (args.out / "table1_yield.md").write_text(_md(t1, h1, r1) + "\n" + _md(t1b, h1b, r1b))
+    t1, h1, r1, t1b, h1b, r1b = data_yield()
+    (args.out / "table_yield.md").write_text(_md(t1, h1, r1) + "\n" + _md(t1b, h1b, r1b))
     if not args.no_png:
         save_table_png(
-            args.out / "table1_yield.png", t1, h1, r1,
+            args.out / "table_yield.png", t1, h1, r1,
             col_widths=[0.8, 1.0, 1.0, 1.1, 1.1],
         )
         save_table_png(
-            args.out / "table1_bias.png", t1b, h1b, r1b,
+            args.out / "table_bias.png", t1b, h1b, r1b,
             col_widths=[1.2, 2.2, 1.4],
         )
 
-    t2, h2, r2, note2 = data_table2_exp1()
-    (args.out / "table2_exp1.md").write_text(_md(t2, h2, r2, note=note2))
+    t2, h2, r2, note2 = data_exp1_profit()
+    (args.out / "table_exp1_profit.md").write_text(_md(t2, h2, r2, note=note2))
     if not args.no_png:
         save_table_png(
-            args.out / "table2_exp1.png", t2, h2, r2, note=note2,
+            args.out / "table_exp1_profit.png", t2, h2, r2, note=note2,
             col_widths=[2.8, 1.3, 1.4, 1.4],
         )
 

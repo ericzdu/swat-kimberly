@@ -18,11 +18,10 @@ from dataclasses import replace
 
 import numpy as np
 
-from .constrainers import MANURE_N_FRAC, MAX_N_LOADING, mineral_n, manure_n, repair
-from .env import (DEFAULT_PLAN, N_YEARS, SPINUP, WEATHER_YEARS, arm_dims, decode_year,
-                  time_sim)
+from .constrainers import MANURE_N_FRAC, MAX_N_LOADING, repair
+from .env import DEFAULT_PLAN, N_YEARS, SPINUP, WEATHER_YEARS, decode_year, time_sim
 from .fastrunner import EDITABLE, FastRunner
-from .monthly import MONTH_DEPTH_MAX, N_GROWING, plan_from_monthly_i, year_events
+from .monthly import MONTH_DEPTH_MAX, N_GROWING, year_events
 from .rewarders import Prices, nass, profit
 from .schedule import CROPS, GROWING_MONTHS, YearAction, build
 
@@ -56,8 +55,8 @@ class MonthlySwatEnv:
             range(lo, hi - N_YEARS - SPINUP + 2)
         )
         self.rng = np.random.default_rng(seed)
-        # Free action width: I → 1 (depth); N → 2 (mineral kg + manure flag); all → more.
-        self.action_dim = {"I": 1, "N": 2, "R": 3, "all": 4}.get(arm, 1)
+        # Free action width: I → 1 (depth); N → 2 (mineral kg + manure flag).
+        self.action_dim = {"I": 1, "N": 2}.get(arm, 1)
         self.reset()
 
     def reset(self, *, seed: int | None = None, start_year: int | None = None):
@@ -76,7 +75,8 @@ class MonthlySwatEnv:
         self.cum_profit = 0.0
         self.last = dict(sw=200.0, strsn=0.0, strsw=0.0, precip=20.0, pet=100.0,
                          remaining_n=float(self.max_n or MAX_N_LOADING))
-        # Year crop sequence from DEFAULT_PLAN (measured rotation) unless arm R/all.
+        # Year crop sequence is always DEFAULT_PLAN's measured rotation: since the 2026-09-09
+        # scope reduction the rotation is fixed, not a decision variable.
         self.crops = [decode_year(DEFAULT_PLAN[y]).crop for y in range(N_YEARS)]
         return self._obs(), {}
 
@@ -100,27 +100,17 @@ class MonthlySwatEnv:
     def _apply_action(self, action: Sequence[float]) -> None:
         a = np.asarray(action, dtype=float).ravel()
         y, m = self.year_idx, self.month_idx
-        if self.arm in ("I", "all"):
+        if self.arm == "I":
             depth = float(np.clip(a[0], 0.0, 1.0)) * MONTH_DEPTH_MAX
             self.month_mm[y, m] = depth
-        if self.arm in ("N", "all"):
-            # a[0] or a[1]: mineral fraction of remaining allowance this month.
-            idx = 0 if self.arm == "N" else 1
-            frac = float(np.clip(a[idx], 0.0, 1.0))
+        if self.arm == "N":
+            # a[0]: mineral fraction of remaining allowance this month.
+            frac = float(np.clip(a[0], 0.0, 1.0))
             rem = self._remaining_n(y)
             self.mineral_mm[y, m] = frac * rem
-            # Manure once in April (month index 0) if arm N and second dim high.
-            if self.arm == "N" and m == 0 and len(a) > 1:
-                base = decode_year(DEFAULT_PLAN[y])
+            # Manure once in April (month index 0) if the second dim is high.
+            if m == 0 and len(a) > 1:
                 self.manure_year[y] = float(np.clip(a[1], 0.0, 1.0)) * 90.0
-            elif self.arm == "all" and m == 0 and len(a) > 2:
-                self.manure_year[y] = float(np.clip(a[2], 0.0, 1.0)) * 90.0
-        if self.arm in ("R", "all") and m == 0:
-            # Crop chosen at year start only.
-            scores = a[-3:] if self.arm == "R" else a[-3:]
-            if len(a) >= 3:
-                scores = a[:3] if self.arm == "R" else a[-3:]
-                self.crops[y] = CROPS[int(np.argmax(scores))]
 
     def _build_plan(self) -> list[YearAction]:
         plan: list[YearAction] = []
@@ -171,6 +161,22 @@ class MonthlySwatEnv:
         terminated = self.t >= EPISODE_STEPS
         return self._obs(), reward, terminated, False, {"cum_profit": self.cum_profit, **d}
 
+    def _decided_row(self, df):
+        """The monthly row for the month just decided — not the last row of the table.
+
+        Every step re-runs the *whole* rotation, so the table always ends at December of the
+        final simulated year. Taking ``iloc[-1]`` therefore returns the same future month at
+        every step, which both leaks past the decision point and leaves the hydrologic
+        channels constant within an episode. Select by (year, month) instead: ``nyskip``
+        discards the spin-up year, so printed year ``y`` is ``start_year + SPINUP + y``.
+        """
+        if df is None or not len(df) or "yr" not in df.columns or "mon" not in df.columns:
+            return None
+        yr = self.start_year + SPINUP + self.year_idx
+        mon = GROWING_MONTHS[self.month_idx]
+        hit = df[(df["yr"] == yr) & (df["mon"] == mon)]
+        return hit.iloc[0] if len(hit) else None
+
     def _read_state(self) -> dict:
         out = dict(sw=200.0, strsn=0.0, strsw=0.0, precip=20.0, pet=100.0)
         try:
@@ -178,16 +184,16 @@ class MonthlySwatEnv:
             pw = self.runner.read("hru_pw_mon.txt")
         except Exception:
             return out
-        if wb is not None and len(wb):
-            row = wb.iloc[-1]
+        row = self._decided_row(wb)
+        if row is not None:
             for key, candidates in (("sw", ("sw_final", "sw")), ("precip", ("precip", "rain")),
                                     ("pet", ("pet",))):
                 for c in candidates:
                     if c in row.index:
                         out[key] = float(row[c])
                         break
-        if pw is not None and len(pw):
-            row = pw.iloc[-1]
+        row = self._decided_row(pw)
+        if row is not None:
             for key in ("strsn", "strsw"):
                 if key in row.index:
                     out[key] = float(row[key])

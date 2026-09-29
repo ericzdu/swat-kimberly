@@ -158,11 +158,11 @@ def test_episode_terminates_and_rewards_sum_to_profit():
     :data:`SwatEnv.REWARD_SCALE`; this pins the two together.
     """
     rng = np.random.default_rng(1)
-    with SwatEnv(stochastic_weather=False) as env:
+    with SwatEnv(stochastic_weather=False, arm="N") as env:
         env.reset(start_year=2012)
         total = 0.0
         for _ in range(N_YEARS):
-            _, rew, term, _, info = env.step(rng.random(ACTION_DIM))
+            _, rew, term, _, info = env.step(rng.random(len(env.free_dims)))
             total += rew
         assert term
         assert total / SwatEnv.REWARD_SCALE == pytest.approx(info["cum_profit"])
@@ -185,9 +185,13 @@ def test_observation_exposes_soil_carryover():
 
 
 def test_observation_reports_previous_crop():
-    with SwatEnv(stochastic_weather=False) as env:
+    """The crop is no longer chosen by any arm (scope reduction, 2026-09-09), so the previous
+    crop is whatever the fixed measured rotation put there. The observation must still report
+    it — it is the channel a policy sees the rotation through."""
+    from swat_gym.env import MEASURED_ROTATION
+
+    with SwatEnv(stochastic_weather=False, arm="I") as env:
         env.reset(start_year=2012)
-        a = np.zeros(ACTION_DIM)
-        a[CROPS.index("alfa")] = 1.0
-        obs, *_ = env.step(a)
-        assert obs[1 + CROPS.index("alfa")] == 1.0
+        obs, *_ = env.step(np.full(len(env.free_dims), 0.5))
+        assert obs[1 + CROPS.index(MEASURED_ROTATION[0])] == 1.0
+        assert sum(obs[1:1 + len(CROPS)]) == 1.0, "exactly one crop must be flagged"

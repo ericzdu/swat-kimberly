@@ -1,0 +1,8 @@
+Research highlights -- Information Processing in Agriculture
+Journal limit: 3-5 bullets, max 85 characters each (spaces included).
+
+- First Gymnasium environment driven by the official SWAT+ engine on a measured field
+- A protocol separating optimizer search from state-dependent policy adaptation
+- Budgets matched in engine runs, with objective parity tested rather than assumed
+- Nitrate is never priced: the whole profit-leaching frontier is reported instead
+- Weather-specific scheduling is worth 836 $/ha, so a null result is not vacuous

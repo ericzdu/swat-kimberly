@@ -20,7 +20,6 @@ to, and a sequential policy cannot beat an optimized fixed schedule.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
 
 import numpy as np
 
@@ -52,18 +51,22 @@ ACTION_DIM = 13
 #: Which action dimensions each experiment is allowed to move. Everything else is held at
 #: :data:`DEFAULT_PLAN`, so an arm's gain is attributable to its lever alone.
 #:
-#: Three arms, one per focused experiment, plus the do-nothing control. The old ``M``/``MR``/
-#: ``all`` combination arms are gone: ``all`` at 63 parameters scored *below* its own 42-
-#: parameter subset ``MR`` on an equal evaluation budget, which is an under-convergence
-#: artefact rather than a finding, and combination arms are what made the last round
-#: unreadable. ``N`` merges manure with mineral fertiliser because they are one decision --
-#: how much N, from which source, when -- competing under one :data:`MAX_N_LOADING` cap.
+#: Two arms, one per experiment, plus the do-nothing control. ``N`` merges manure with mineral
+#: fertiliser because they are one decision -- how much N, from which source, when -- competing
+#: under one :data:`MAX_N_LOADING` cap.
+#:
+#: **The combination arms are gone, twice over.** ``M``/``MR`` went first: ``all`` at 63
+#: parameters scored *below* its own 42-parameter subset ``MR`` on an equal evaluation budget,
+#: an under-convergence artefact rather than a finding. ``R`` (rotation) and ``all`` (the Exp 4
+#: joint search) went on **2026-09-09** with the scope reduction to two levers. The rotation is
+#: still *simulated* -- ``DEFAULT_PLAN`` encodes the measured corn/barley/alfalfa sequence and
+#: dimensions 0-2 still decode to a crop -- it is simply no longer a *decision variable*. That
+#: is what converts the +49.5 % alfalfa yield bias from a differential error between arms into
+#: a common-mode one shared by all of them.
 ARMS = {
     "baseline": (),
     "N": (3, 4, 5, 6, 7, 8, 9),
     "I": (10, 11, 12),
-    "R": (0, 1, 2),
-    "all": tuple(range(13)),  # Exp 4 joint — every annual dimension
 }
 
 #: The default a free lever is measured *against*, and therefore load-bearing: an arm's reported
@@ -99,8 +102,8 @@ DEFAULT_ACTION = np.array([
 ])
 
 #: Per-year default plan. The rotation is the **measured** one — corn, barley, three years of
-#: alfalfa, corn, barley — so the `R` arm is scored against the field's real rotation rather
-#: than against continuous corn.
+#: alfalfa, corn, barley — and since 2026-09-09 it is *fixed*: every arm runs on the field's
+#: real rotation, so no arm's result depends on trading alfalfa area against the annuals.
 MEASURED_ROTATION = ("corn", "barl", "alfa", "alfa", "alfa", "corn", "barl")
 
 
@@ -324,7 +327,7 @@ class SwatEnv:
     def __init__(self, runner: FastRunner | None = None, *, prices: Prices | None = None,
                  stochastic_weather: bool = True, train_years: Sequence[int] | None = None,
                  no3_price: float = 0.0, seed: int | None = None,
-                 reward_scale: float | None = None, arm: str = "all",
+                 reward_scale: float | None = None, arm: str,
                  max_n: float | None = MAX_N_LOADING) -> None:
         self._own = runner is None
         self.runner = runner or FastRunner(editable=EDITABLE)
@@ -370,8 +373,6 @@ class SwatEnv:
         crop sequence rather than on continuous corn.
         """
         a = np.asarray(action, dtype=float)
-        if len(self.free_dims) == ACTION_DIM:
-            return a
         t = min(len(self.plan), N_YEARS - 1)
         full = DEFAULT_PLAN[t].copy()
         full[list(self.free_dims)] = a

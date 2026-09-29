@@ -2,7 +2,9 @@
 
 **Agent entrypoint:** see [`CLAUDE.md`](CLAUDE.md). This file is the executable how-to.
 
-The agent controls **irrigation, manure/N, and rotation**; SWAT+ supplies the dynamics.
+The agent controls **irrigation and manure/N**; SWAT+ supplies the dynamics. The rotation is a
+**fixed property of the environment**, not a lever — it was one until 2026-09-09; see the scope
+cut below.
 Lives in `src/swat_gym/`. Sibling to `../rufas-gym` and `../aquaswat-gym`.
 
 ## Staging
@@ -15,30 +17,50 @@ Lives in `src/swat_gym/`. Sibling to `../rufas-gym` and `../aquaswat-gym`.
 | 3. Monthly open-loop | Apr–Sep depths; nest annual default | `monthly.py` |
 | 4. Foresight gate | perfect foresight vs shared schedule (an *estimate*, not a ceiling) | `exp1_ceiling` |
 | 5. Feedback controller | CMA closed-loop row | `exp1_controller` |
-| 6. Monthly gym + Exp 1–4 | adaptivity under monthly MDP | `monthly_env.py` + `exp1`…`exp4` |
+| 5b. Grower rule | the logs as a fitted feedback rule — the human bar on any weather | `exp1_grower_rule` |
+| 6. Monthly gym + Exp 1–2 | adaptivity under monthly MDP | `monthly_env.py` + `exp1`, `exp2` |
 
 ## Execution order (locked = paper numbering)
 
 ```
-pytest → exp1_ceiling → exp1_controller → exp1_irrigation → exp2_nitrogen → exp3_rotation → exp4_joint
+pytest → exp1_ceiling → exp1_controller → exp1_grower_rule → exp1_irrigation → exp2_nitrogen
 ```
 
-Do **not** start Exp 4 until Exp 1’s frozen-plan sign is stable across seeds.
-Do **not** start cluster PPO if `exp1_ceiling` reports `gate_pass: false`. The key is
+Do **not** start cluster PPO if `exp1_ceiling` reports `gate_pass: false` — `rerun_exp1.sh`
+now exits 2 rather than leaving that to the operator (`FORCE_PPO=1` overrides deliberately).
+The gate is **λ_n-independent** (the ceiling scores at `no3_price = 0` by construction), so it
+is computed once and reused across frontier points instead of re-run per `OUT_TAG`. The key is
 `foresight_test`, not `ceiling_test`: an under-converged oracle biases it *down*, so a policy
-can legitimately exceed it. Measured 2026-08-06: **+836 ± 68 $/ha**.
+can legitimately exceed it.
+
+~~Measured 2026-08-06: +836 ± 68 $/ha.~~ Superseded — naive SE, and pre-reconciliation.
+**Current, verified on disk 2026-08-28 18:34** (`runs/exp1_ceiling.json`): `gate_pass: true`,
+`foresight_test` **+721.5 $/ha**, `se_ess` 278.8, `ci95_boot` [502.9, 999.1], `ci95_ess`
+[175.0, 1268.0], n = 5, ESS 1.25. Per-window: 1191.8 / 455.8 / 539.8 / 531.6 / 888.6. The point
+estimate and the bootstrap interval clear the 250 noise floor; the ESS interval's lower bound
+(175) does not, so quote the interval.
 
 ## Five-row protocol
 
 | Row | Meaning |
 |---|---|
-| `measured` | shipped `management.sch` — human bar |
+| `measured` | shipped `management.sch`, the 2013–19 log **replayed verbatim** on each window |
+| `grower` | the same behaviour as a fitted rule — the human bar that can respond to weather |
 | `default` | `DEFAULT_PLAN` through the same generator |
 | `fixed` | CMA-ES open-loop (monthly for Exp 1) |
 | `policy` | PPO |
 | `frozen` | policy’s plan selected on **train**, replayed on **test** |
 
 Plus Exp 1 extras: **ceiling** (perfect foresight) and **controller** (CMA feedback).
+
+**Why two human rows (added 2026-09-28).** Only the 2012-start window runs the log on its own
+weather, and that window is the train/test buffer. Every other window replays the growers'
+schedule on weather it never responded to, which strips out whatever adaptation they had. The
+`grower` row fits the controller's three parameters to the logged monthly depths on 2013–19
+weather (never to profit), gates the fit at 1 % of the logged 3,938.8 mm (rule 5), and runs the
+frozen rule on every window. The fit years overlap the test years; that is disclosed, and the
+row is a reference, never a learned arm. Exp 2 re-scores the same fitted rule, so it needs
+`runs/exp1_grower_rule.json` first.
 
 ## Experiments
 
@@ -49,38 +71,26 @@ uv run python -m swat_gym.experiments.exp1_ceiling --budget 5000
 # or the whole Exp 1 pipeline, detached, with the objective-parity preflight:
 #   perl -e 'use POSIX; setsid(); exec @ARGV' -- bash scripts/rerun_exp1.sh
 uv run python -m swat_gym.experiments.exp1_controller --budget 5000
+uv run python -m swat_gym.experiments.exp1_grower_rule --evals 220
 uv run python -m swat_gym.experiments.exp1_irrigation --budget 300000 --ppo-seeds 3
 # open-loop only after failed gate:
 uv run python -m swat_gym.experiments.exp1_irrigation --budget 300000 --skip-ppo
 ```
 
-Outputs: `runs/exp1_ceiling.json`, `runs/exp1_controller.json`, `runs/exp1_irrigation.json`.
+Outputs: `runs/exp1_ceiling.json`, `runs/exp1_controller.json`, `runs/exp1_grower_rule.json`,
+`runs/exp1_irrigation.json`.
 
 ### Exp 2 — Nitrogen
 
 ```bash
-uv run python -m swat_gym.experiments.exp2_nitrogen --budget 300000
+uv run python -m swat_gym.experiments.exp2_nitrogen --budget 300000 \
+    --max-n none --ppo-seeds 3
 ```
 
 Output: `runs/exp2_nitrogen.json`.
 
-### Exp 3 — Rotation (enumerate)
-
-```bash
-uv run python -m swat_gym.experiments.exp3_rotation
-# smoke:
-uv run python -m swat_gym.experiments.exp3_rotation --max-seqs 50
-```
-
-Output: `runs/exp3_rotation.json`. No PPO.
-
-### Exp 4 — Joint
-
-```bash
-uv run python -m swat_gym.experiments.exp4_joint --budget 300000 --ppo-seeds 3
-```
-
-Warm-starts from Exp 2/3 artefacts when present. Rule: joint < composed ⇒ optimizer, not interaction.
+`--max-n` has no default and must be passed explicitly. Exp 1 runs **uncapped**, so Exp 2 needs
+`--max-n none` to be comparable with it (hard rule 2).
 
 ## Train / test windows
 
@@ -100,15 +110,26 @@ Defined in `src/swat_gym/windows.py`:
 Suggested map after Exp 1 smoke is green:
 
 1. Node A: Exp 1 seeds 0/1/2
-2. Then Node A: Exp 2; Node B: Exp 3; both → Exp 4
+2. Then Node A: Exp 2 seeds 0/1/2
+
+With two experiments the frontier points, not the levers, are what parallelise: one node per
+`NO3_PRICE`/`OUT_TAG` pair (hard rule 1 wants the whole sweep, not one point).
 
 ## Gate checklist before full runs
 
+- [ ] `uv run python scripts/check_param_state.py` PASS — the model's crop parameters are the
+      collaborator's workbook (rule 11b) and no fit has silently reverted them
 - [ ] `uv run pytest` green
 - [ ] `uv run pytest -m slow` — monthly default irrigation within 1% of 3,938.8 mm
 - [ ] `assert_no_leakage()` passes (import `swat_gym.windows`)
 - [ ] `exp1_ceiling` written; if `gate_pass` false, skip PPO
 - [ ] Water price sourced or breakeven reported (re-optimize under sweep when sourced)
+- [ ] **`--max-n` passed explicitly and identical across the two experiments being compared.**
+      Exp 1 is uncapped, so Exp 2 needs `--max-n none`. The runners refuse to start without the
+      flag, and it is recorded in every artefact.
+- [ ] **Intervals quoted as `se_ess`, never `se_naive`.** ESS is 1.25 on the five test windows,
+      so anything under a few hundred $/ha is not resolvable by this split — say that rather
+      than quoting a tight naive SE.
 
 **Sustainability gates.** Nitrate is the second objective, not an annotation, so an experiment is
 not done when the profit column is filled in.
@@ -118,16 +139,46 @@ not done when the profit column is filled in.
       gives **one point**; the deliverable is the set. Publishing one interior point as "the"
       answer is the failure rule 1 exists to prevent.
 - [ ] **The leaching column is non-degenerate before any sustainability claim.** At measured
-      practice the signal is sparse across windows — 2.40 kg/ha/yr in the 2013-start window and
-      ~0 in the other four (OPEN_ITEMS #11). If the arms being compared do not separate on
-      leaching, report that as the finding; do not report a frontier drawn through noise.
+      practice the signal is **zero**, not merely sparse: re-measured 2026-08-28, percolation
+      and nitrate are 0.00 at the measured and default schedules, and drainage begins only above
+      ~×1.2 applied water (OPEN_ITEMS #11). λ_n therefore separates arms only where one
+      over-irrigates. If the arms being compared do not separate on leaching, report that as the
+      finding; do not report a frontier drawn through zeros.
 - [ ] **Both limits restated wherever a sustainability claim is made:** leaching unvalidated on
       site, N₂O Tier 1 accounting and never priced.
 
-## Deleted 2026-08-07 (recover from git history if ever needed)
+## Retired modules (recover from git history if ever needed)
 
-The tree now holds only modules that are live for the paper. Everything below was removed in one
-pass; git history is the archive.
+The tree now holds only modules that are live for the paper. **Why a module was retired matters
+more than the fact that it was** — the reasons below are not equivalent, and restoring a module
+without checking which applies is how a leaky result gets back into the paper.
+
+### Cut for scope, 2026-09-09 — correct when removed, safe to restore verbatim
+
+`src/swat_gym/experiments/exp3_rotation.py` (rotation enumeration; per-sequence separable train
+terms and the exact `no3_frontier` re-selection) and `src/swat_gym/experiments/exp4_joint.py`
+(joint search warm-started from Exp 2/3, with the `_check_world` guard on `max_n`/`no3_price`).
+
+**Nothing was wrong with them.** Both were tested and both carried the 2026-08-28 methodology
+fixes. They were cut because the paper was reduced to two levers:
+
+- Rotation is the lever the rule 11b crop bias most compromises — alfalfa **+49.2 %**, corn
+  **−12.1 %** (refit 2026-09-10; was +49.5 / −24.6), alfalfa three of seven rotation years — the
+  alfalfa half, which is the half that drives this, is unchanged — so any comparison shifting area between
+  alfalfa and the annuals reads a biased price ratio. Fixing the rotation makes that bias
+  **common-mode** across arms instead of differential.
+- Four experiments on five test windows at **ESS 1.25** is a multiple-comparisons problem, not
+  four times the evidence.
+- Neither claimed contribution (the environment; the search-vs-adaptation protocol) depends on
+  them — Exp 1 demonstrates the protocol in full and Exp 2 shows it is not irrigation-specific.
+
+Hard rule 8 (joint < composed ⇒ optimizer failure) was retired with them and is tombstoned in
+`CLAUDE.md` rather than renumbered. If the scope is ever widened, restore the modules **and**
+rule 8 together.
+
+### Deleted 2026-08-07
+
+Everything below was removed in one pass; git history is the archive.
 
 **Leaky split — do not restore without re-pointing it.** `exp2_rl.py` (annual-cadence PPO with
 budget asymmetry), `exp2b_controls.py` (its frozen-plan controls), `scripts/run_overnight.sh`

@@ -1,5 +1,5 @@
 .venv/
-runs/
+runs/*
 __pycache__/
 *.pyc
 .DS_Store
@@ -14,8 +14,11 @@ __pycache__/
 
 # runs/ is ignored wholesale, but these two outlive their generating modules
 # (deleted 2026-08-07) and are cited in rewarders.py / env.py. Keep them tracked.
+# (`runs/*`, not `runs/`: a negation cannot re-include a file inside an ignored directory.)
 !runs/exp1b_price_ratio.json
 !runs/exp1c_cadence_e500.json
+# The only record of the current fit; `optimize.py` overwrites it (OPEN_ITEMS #19).
+!runs/calibration.json
 
 PAPER.md
 handoff.md

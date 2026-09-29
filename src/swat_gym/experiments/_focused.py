@@ -6,7 +6,9 @@ so the machinery lives here once and each ``expN_*.py`` is an entry point that n
 Five rows, and two of them are controls
 ---------------------------------------
 ========================  =========================================================
-``measured``              the field's own shipped ``management.sch`` — the human bar
+``measured``              the field's own shipped ``management.sch``, replayed verbatim
+``grower``                the same behaviour as a fitted rule (:mod:`exp1_grower_rule`) — the
+                          human bar that can respond to each window's weather
 ``default``               **``DEFAULT_PLAN`` through the same schedule generator**
 ``fixed``                 best non-adaptive plan for this lever, CMA-ES
 ``policy``                PPO on the annual-cadence env
@@ -42,7 +44,7 @@ Prices are the 2022-24 average vector (:func:`~swat_gym.rewarders.average`), fix
 three experiments. Everything outside the arm sits at measured practice via ``DEFAULT_PLAN``.
 For Exp 1 and 3 that pins irrigation **against the ``default`` row** — water cost is the same
 constant in ``default``, ``fixed``, ``policy`` and ``frozen``, so it cannot move comparisons
-among them and the unsourced ``DEFAULT_WATER`` placeholder is neutralised there. It is *not*
+among them and the scored ``DEFAULT_WATER`` is neutralised there. It is *not*
 the same constant in ``measured``, which irrigates on its own irregular record; that is one of
 the reasons ``measured`` is a context row rather than the denominator. Exp 2 has no such
 protection and needs a real district rate.
@@ -60,6 +62,7 @@ import argparse
 import hashlib
 import json
 import pickle
+import sys
 import time
 from pathlib import Path
 
@@ -74,7 +77,7 @@ from ..rewarders import Prices, average, profit
 from ..schedule import YearAction
 from ._optimize import minimise
 
-from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage
+from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage, effective_n
 
 ROOT = Path(__file__).resolve().parents[3]
 assert_no_leakage()
@@ -97,8 +100,15 @@ def _row(d: dict, start_year: int, *, yield_mg: float | None = None) -> dict:
             "n2o_kg": d.get("n2o_kg"), "yield_mg": yield_mg}
 
 
-def paired(a: list[dict], b: list[dict]) -> dict:
-    """Mean and standard error of the per-window paired difference ``a - b``.
+#: Bootstrap replicates for :func:`paired`. Fixed, and the seed with it, so an interval is a
+#: property of the rows rather than of when it was computed.
+N_BOOT = 10_000
+BOOT_SEED = 0
+
+
+def paired(a: list[dict], b: list[dict], *, n_boot: int = N_BOOT,
+           seed: int = BOOT_SEED) -> dict:
+    """The per-window paired difference ``a - b``, with an interval that respects the design.
 
     Paired, because both rows are scored on the **same** weather windows in the same order:
     the window-to-window spread of profit is far larger than the differences between rows, and
@@ -106,11 +116,45 @@ def paired(a: list[dict], b: list[dict]) -> dict:
     mean of 7 windows with no dispersion at all, read against a noise floor that
     :data:`~swat_gym.env.ACTION_DIM` estimates at 200-300 $/ha — so "PPO loses by 696" had no
     way to be checked.
+
+    **There is deliberately no key called ``se``.** The five held-out windows are eight years
+    long and start one year apart, so they share up to seven of their eight years;
+    ``sd / sqrt(n)`` treats them as five independent draws and overstates precision by about
+    ``sqrt(n / ESS)`` ≈ 2×. `CLAUDE.md` rule 7 forbids publishing it, so it is reported under
+    the name ``se_naive`` — kept only because the ratio to ``se_ess`` is the thing a reader
+    needs to see — and the number to quote is ``se_ess``, which divides by the effective sample
+    size from :func:`~swat_gym.windows.effective_n` (1.25 for the test set, not 5).
+
+    Both intervals are reported, and they answer different questions:
+
+    * ``ci95_boot`` — percentile bootstrap resampling windows. It captures the shape of the
+      per-window differences (they are not Gaussian, and n = 5) but **still treats the windows
+      as exchangeable and independent**, so it is optimistic in exactly the way ``se_naive`` is.
+    * ``ci95_ess`` — ``mean ± 1.96 · se_ess``. Wide, and still optimistic: it uses a normal
+      quantile where ESS = 1.25 would demand a t quantile at 0.25 degrees of freedom, which is
+      enormous. With this design, an honest reading of a difference smaller than a few hundred
+      $/ha is "not resolvable", and that is a fact about the split, not about the method.
     """
     d = np.array([r["profit"] for r in a]) - np.array([r["profit"] for r in b])
+    n = int(d.size)
+    starts = [r.get("start_year") for r in a]
+    known = [s for s in starts if s is not None]
+    ess = effective_n(known) if len(known) == n and n > 1 else float(n)
+    sd = float(d.std(ddof=1)) if n > 1 else float("nan")
+    se_naive = sd / np.sqrt(n) if n > 1 else float("nan")
+    se_ess = sd / np.sqrt(ess) if n > 1 and ess > 0 else float("nan")
+    if n > 1:
+        rng = np.random.default_rng(seed)
+        means = d[rng.integers(0, n, size=(n_boot, n))].mean(axis=1)
+        ci_boot = [float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))]
+        ci_ess = [float(d.mean() - 1.96 * se_ess), float(d.mean() + 1.96 * se_ess)]
+    else:
+        ci_boot = ci_ess = [float("nan"), float("nan")]
     return {"mean": float(d.mean()),
-            "se": float(d.std(ddof=1) / np.sqrt(d.size)) if d.size > 1 else float("nan"),
-            "n": int(d.size),
+            "n": n, "ess": float(ess), "sd": sd,
+            "se_naive": float(se_naive), "se_ess": float(se_ess),
+            "ci95_boot": ci_boot, "ci95_ess": ci_ess,
+            "resolvable": bool(n > 1 and ci_ess[0] * ci_ess[1] > 0),
             "per_window": [round(float(v), 1) for v in d]}
 
 
@@ -127,6 +171,36 @@ def score_measured(windows, prices: Prices, no3_price: float) -> list[dict]:
         for sy in windows:
             runner.run({"time.sim": time_sim(sy, N_YEARS + SPINUP)})
             out.append(_row(profit(runner, prices, no3_price=no3_price), sy))
+    return out
+
+
+#: The fitted grower rule, produced by :mod:`exp1_grower_rule`. Exp 2 re-scores it rather than
+#: refitting, so both experiments carry the *same* human rule.
+GROWER_FIT = ROOT / "runs" / "exp1_grower_rule.json"
+
+
+def score_grower(windows, prices: Prices, no3_price: float, max_n) -> list[dict]:
+    """The growers' irrigation as a fitted feedback rule (:mod:`exp1_grower_rule`), on each window.
+
+    The replayed log (:func:`score_measured`) is one fixed schedule on weather it never saw; this
+    is the same behaviour distilled into a rule that responds to each window's weather. Nitrogen
+    sits at ``DEFAULT_PLAN`` (measured practice) and ``max_n`` must match the other rows.
+    """
+    from .exp1_controller import rollout_controller   # exp1_controller imports this module
+
+    if not GROWER_FIT.is_file():
+        raise SystemExit(f"{GROWER_FIT.name} missing: run `python -m "
+                         "swat_gym.experiments.exp1_grower_rule` first (it is Exp 1's, and "
+                         "run order is paper order)")
+    fit = json.loads(GROWER_FIT.read_text())
+    if not fit.get("fit", {}).get("gate_pass"):
+        raise SystemExit(f"{GROWER_FIT.name} failed its rule 5 gate; refusing to score it")
+    out = []
+    with FastRunner() as runner:
+        for sy in windows:
+            out.append(_row(rollout_controller(fit["abc"], runner, start_year=sy,
+                                               prices=prices, no3_price=no3_price,
+                                               max_n=max_n), sy))
     return out
 
 
@@ -165,6 +239,11 @@ def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
                    partial_path: Path | None = None, cfg: dict | None = None):
     """CMA-ES over the arm's free parameters, checkpointing the strategy as it goes.
 
+    The search always starts from :func:`~swat_gym.env.default_free` — measured practice on the
+    arm's own dimensions. The ``x0`` warm-start parameter was removed on **2026-09-09** with
+    Exp 4: it existed solely so the joint search could start from the composed single-lever
+    optimum, and with no joint arm there is nothing to compose.
+
     ``evals`` is the **total** budget. A resume restores the pickled
     :class:`cma.CMAEvolutionStrategy` — covariance and step size included — so it finishes at
     the same evaluation count, and in the same search state, as an uninterrupted run would.
@@ -200,7 +279,8 @@ def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
                 "train_obj": -best_f, "x": list(map(float, best_x)),
             }))
 
-        best, n_evals, history = minimise(score, default_free(arm), evals=evals, seed=seed,
+        start = default_free(arm)
+        best, n_evals, history = minimise(score, start, evals=evals, seed=seed,
                                           state=state, on_generation=checkpoint)
         # Engine runs spent before this process started, at one run per window per evaluation.
         n_runs = runner.n_runs + done * len(train_windows)
@@ -325,8 +405,9 @@ def _water_breakeven(a: list[dict], b: list[dict], prices: Prices) -> dict:
     Profit is linear in the water price, so the advantage at price *p* is
     ``(A - B) - p * (mm_A - mm_B)`` where A, B are profits at the scored price with its water
     term added back. The root is exact arithmetic on stored rows — no engine involved — which
-    is the point: it converts a result that depends on the unsourced ``DEFAULT_WATER``
-    placeholder into a statement of the form "this holds for any price below X".
+    is the point: it converts a result that depends on the scored ``DEFAULT_WATER`` into a
+    statement of the form "this holds for any price below X", covering the sourced
+    ``WATER_PRICE_RANGE`` without another engine run.
     """
     adv = mean(a) - mean(b)
     dmm = float(np.mean([r["irrigation_mm"] for r in a])
@@ -338,6 +419,31 @@ def _water_breakeven(a: list[dict], b: list[dict], prices: Prices) -> dict:
     return {"scored_price": prices.water, "delta_mm": dmm,
             "breakeven": float(prices.water + adv / dmm),
             "note": "advantage vanishes at this $/mm/ha; sign of delta_mm gives the direction"}
+
+
+def model_digest() -> str:
+    """Digest of the calibrated model inputs, for keying any resumable artefact.
+
+    ``_cfg_key`` covers everything the training objective depends on *in code*. The model
+    parameters on disk are equally part of the objective and were **not** covered, so a
+    config-identical invocation resumed straight across a recalibration. Measured 2026-09-11:
+    after the refit, ``rerun_exp1.sh`` completed stage 3 in **three minutes** — it reused the
+    2026-08-29 CMA plan and all three PPO policies, which had been searched on the *pre-refit*
+    model, and merely re-scored them. The log said ``exit=0`` and the artefact looked complete.
+
+    That is the failure hard rule 2 names: a difference between what was searched and what was
+    scored, invisible in the result. Hashing ``params.CALIBRATABLE`` closes it, because that is
+    exactly the set a calibration or a port writes.
+    """
+    from swat_gym.fastrunner import TXTINOUT
+    from swat_gym.params import CALIBRATABLE
+
+    h = hashlib.sha256()
+    for name in sorted(CALIBRATABLE):
+        path = TXTINOUT / name
+        h.update(name.encode())
+        h.update(path.read_bytes() if path.is_file() else b"<absent>")
+    return h.hexdigest()[:10]
 
 
 def _cfg_key(cfg: dict) -> str:
@@ -367,6 +473,27 @@ def _save_stage(out: Path, name: str, cfg: dict, payload) -> None:
 
 # -- the experiment ------------------------------------------------------------------------
 
+def _max_n_arg(text: str) -> float | None:
+    """Parse ``--max-n``: a number, or ``none``/``off`` for an uncapped run.
+
+    There is no default. `CLAUDE.md` rule 2 exists because a cap applied on one code path and
+    not another changes what is simulated without changing what is priced — which inverted
+    Exp 1's headline once. The cap also binds hard on the baseline itself (``DEFAULT_PLAN``
+    applies 569 and 936 kg N/ha in its two fertilised years, both clipped to 400), so a run
+    under a different cap is a run in a different world, not a stricter version of the same
+    one. Making it explicit is what stops two experiments being composed across that line.
+    """
+    t = text.strip().lower()
+    if t in {"none", "off", "uncapped"}:
+        return None
+    try:
+        v = float(t)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--max-n expects a number or 'none', got {text!r}") from None
+    return v if v > 0 else None
+
+
 def run(arm: str, out_path: Path, argv=None) -> dict:
     ap = argparse.ArgumentParser()
     ap.add_argument("--budget", type=int, default=300_000,
@@ -381,15 +508,21 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
                     help="PPO replicates (seed, seed+100, ...). The CMA-ES row is shared: the "
                          "policy is the stochastic half and the one whose null is reported.")
     ap.add_argument("--no3-price", type=float, default=0.0)
-    ap.add_argument("--max-n", type=float, default=MAX_N_LOADING,
-                    help="N loading cap kg N/ha/yr; 0 or negative disables it entirely")
+    ap.add_argument("--max-n", type=_max_n_arg, default=None, metavar="KG|none",
+                    help=f"REQUIRED. N loading cap kg N/ha/yr (the paper's value is "
+                         f"{MAX_N_LOADING:g}), or 'none' for an uncapped run. Deliberately has "
+                         f"no default: it must match across every experiment whose results are "
+                         f"composed or compared (rule 2)")
     ap.add_argument("--out", type=Path, default=out_path)
     args = ap.parse_args(argv)
 
+    tokens = list(argv) if argv is not None else sys.argv[1:]
+    if not any(t == "--max-n" or t.startswith("--max-n=") for t in tokens):
+        ap.error("--max-n is required: pass '--max-n 400' for the capped world or "
+                 "'--max-n none' for the uncapped one. Exp 1 runs uncapped, so composing or "
+                 "comparing against it needs 'none' here (rule 2).")
     prices = average()
-    # A non-positive cap means "no cap", which is how the {400, uncapped} sweep asks whether
-    # MAX_N_LOADING was ever binding rather than just being the number we happened to report.
-    max_n = args.max_n if args.max_n > 0 else None
+    max_n = args.max_n
     t0 = time.time()
 
     if args.fixed_windows <= 0 or args.fixed_windows >= len(TRAIN_YEARS):
@@ -444,6 +577,21 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
         default_test, default_train = stage["test"], stage["train"]
     print(f"DEFAULT_PLAN baseline (like-for-like): held-out {mean(default_test):.0f} $/ha "
           f"({mean(default_test) - mean(measured_test):+.0f} vs human)", flush=True)
+
+    # The replayed log is one fixed schedule on weather it never saw; the grower rule is the same
+    # behaviour as a rule that responds to each window. Keyed on the fitted parameters too, so a
+    # refit of the rule cannot resume into a stale row.
+    grower_abc = json.loads(GROWER_FIT.read_text())["abc"] if GROWER_FIT.is_file() else None
+    gcfg = {**cfg, "grower_abc": grower_abc}
+    stage = _load_stage(args.out, "grower", gcfg)
+    if stage is None:
+        grower_test = score_grower(TEST_YEARS, prices, args.no3_price, max_n)
+        grower_train = score_grower(fixed_windows, prices, args.no3_price, max_n)
+        _save_stage(args.out, "grower", gcfg, {"test": grower_test, "train": grower_train})
+    else:
+        grower_test, grower_train = stage["test"], stage["train"]
+    print(f"grower rule (fitted to the logs): held-out {mean(grower_test):.0f} $/ha "
+          f"({mean(grower_test) - mean(measured_test):+.0f} vs replayed log)", flush=True)
 
     stage = _load_stage(args.out, "fixed", cfg)
     if stage is None:
@@ -503,7 +651,12 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
                        "adaptivity_value": mean(p_test) - mean(frozen_test)}
 
     def across(k):
-        """Mean and standard error of ``k`` across seeds — the seed-variance estimate."""
+        """Mean and standard error of ``k`` across seeds — the seed-variance estimate.
+
+        ``sd / sqrt(n_seeds)`` is the *correct* estimator here and is deliberately unlike the
+        window-paired one: PPO seeds are independent draws, whereas the held-out windows
+        overlap. Keyed ``se`` rather than ``se_naive``/``se_ess`` for that reason.
+        """
         v = np.array([per_seed[s][k] for s in seeds])
         return {"mean": float(v.mean()),
                 "se": float(v.std(ddof=1) / np.sqrt(v.size)) if v.size > 1 else float("nan"),
@@ -533,7 +686,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
 
     summary = {
         "arm": arm, "prices": prices.label, "budget_engine_runs": args.budget,
-        "max_n": max_n, "fert_op": prices.fert_op,
+        "max_n": max_n, "no3_price": args.no3_price, "fert_op": prices.fert_op,
         "train_years": TRAIN_YEARS, "test_years": TEST_YEARS,
         "fixed_windows": fixed_windows,
         "cma_evals": n_evals, "cma_engine_runs": fixed_runs, "ppo_timesteps": args.budget,
@@ -543,6 +696,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
                     "total": round(time.time() - t0, 1)},
         "mean_profit": {
             "measured_train": mean(measured_train), "measured_test": mean(measured_test),
+            "grower_train": mean(grower_train), "grower_test": mean(grower_test),
             "default_train": mean(default_train), "default_test": mean(default_test),
             "fixed_train": mean(fixed_train), "fixed_test": mean(fixed_test),
             "policy_train": mean(policy_train), "policy_test": mean(policy_test),
@@ -562,12 +716,24 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
             "policy": mean(policy_test) - mean(measured_test),
             "frozen": frozen_means[best_frozen] - mean(measured_test),
         },
+        # The grower rule is the human bar that can respond to weather; `vs_measured` above is
+        # against the replayed log, which cannot.
+        "vs_grower": {
+            "default": mean(default_test) - mean(grower_test),
+            "fixed": mean(fixed_test) - mean(grower_test),
+            "policy": mean(policy_test) - mean(grower_test),
+        },
+        "grower_fit": {"abc": grower_abc, "source": GROWER_FIT.name,
+                       "note": "fitted to 2013-2019 logged behaviour; a reference row, "
+                               "not a learned arm"},
         # Every comparison with its per-window spread, so a difference can be read against the
         # noise instead of being quoted bare.
         "paired_test": {
             "default_vs_measured": paired(default_test, measured_test),
             "fixed_vs_default": paired(fixed_test, default_test),
             "fixed_vs_measured": paired(fixed_test, measured_test),
+            "grower_vs_measured": paired(grower_test, measured_test),
+            "fixed_vs_grower": paired(fixed_test, grower_test),
             "policy_vs_default": paired(policy_test, default_test),
             "policy_vs_fixed": paired(policy_test, fixed_test),
             "frozen_vs_policy": paired(frozen[best_frozen], policy_test),
@@ -578,11 +744,12 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
         "ppo_seeds": seeds, "representative_seed": rep, "across_seeds": seed_stats,
         # Profit is linear in every price, so the water price at which the policy's advantage
         # vanishes is arithmetic on stored rows rather than a rerun. Reporting the breakeven is
-        # what lets an unsourced placeholder (DEFAULT_WATER) stop being load-bearing.
+        # what lets the scored price (DEFAULT_WATER) stop being load-bearing.
         "water_breakeven": _water_breakeven(policy_test, fixed_test, prices),
         "best_frozen_window": best_frozen,
         "frozen_means": {str(k): v for k, v in frozen_means.items()},
-        "per_window": {"measured_test": measured_test, "default_test": default_test,
+        "per_window": {"measured_test": measured_test, "grower_test": grower_test,
+                       "default_test": default_test,
                        "fixed_test": fixed_test, "policy_test": policy_test},
         "policy_plan": {str(sy): [(a.crop, round(a.manure_mg, 1),
                                    [(d, round(kg, 1)) for d, kg in a.fert_splits],
@@ -596,8 +763,10 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     m, v, vd = summary["mean_profit"], summary["vs_measured"], summary["vs_default"]
     print(f"\narm {arm}   prices {prices.label}   budget {args.budget} engine runs")
     print(f"{'':<26}{'train':>10}{'held-out':>11}{'vs default':>12}{'vs human':>11}")
-    print(f"{'measured practice':<26}{m['measured_train']:>10.0f}{m['measured_test']:>11.0f}"
-          f"{'—':>12}{'—':>11}")
+    print(f"{'logged schedule, replayed':<26}{m['measured_train']:>10.0f}"
+          f"{m['measured_test']:>11.0f}{'—':>12}{'—':>11}")
+    print(f"{'grower rule (fitted)':<26}{m['grower_train']:>10.0f}{m['grower_test']:>11.0f}"
+          f"{'—':>12}{m['grower_test'] - m['measured_test']:>+11.0f}")
     print(f"{'DEFAULT_PLAN baseline':<26}{m['default_train']:>10.0f}{m['default_test']:>11.0f}"
           f"{'—':>12}{v['default']:>+11.0f}")
     print(f"{'CMA-ES fixed schedule':<26}{m['fixed_train']:>10.0f}{m['fixed_test']:>11.0f}"
@@ -607,11 +776,18 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     print(f"{'  its own plan, frozen':<26}{'':>10}{m['frozen_best_test']:>11.0f}"
           f"{vd['frozen']:>+12.0f}{v['frozen']:>+11.0f}")
 
-    # Paired across the same held-out windows, so these standard errors are the ones that
-    # decide whether any of the differences above are real.
-    print(f"\n{'paired held-out differences':<30}{'mean':>10}{'± s.e.':>10}")
+    # Paired across the same held-out windows. The interval that decides whether a difference
+    # is real is the ESS one: five eight-year windows one year apart are not five independent
+    # draws, and the naive column is printed beside it only to show by how much it lies.
+    ess = summary["paired_test"]["fixed_vs_default"]["ess"]
+    print(f"\n{'paired held-out differences':<30}{'mean':>10}{'se(ESS)':>10}{'se(naive)':>11}"
+          f"{'95% CI (ESS)':>24}")
     for name, p in summary["paired_test"].items():
-        print(f"{name:<30}{p['mean']:>+10.0f}{p['se']:>10.0f}")
+        lo, hi = p["ci95_ess"]
+        print(f"{name:<30}{p['mean']:>+10.0f}{p['se_ess']:>10.0f}{p['se_naive']:>11.0f}"
+              f"{f'[{lo:+.0f}, {hi:+.0f}]':>24}")
+    print(f"  n = {len(TEST_YEARS)} held-out windows, effective sample size {ess:.2f} "
+          f"(rule 7: quote se(ESS), never se(naive))")
     share = ("n/a — the policy has no edge over the fixed schedule to apportion"
              if adaptivity_share is None else f"{100 * adaptivity_share:+.0f} % of it")
     print(f"\npolicy over fixed: {adv:+.0f} $/ha")

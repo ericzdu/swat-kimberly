@@ -1,0 +1,74 @@
+{
+  "score": {
+    "before": 1999.175552391955,
+    "after": 1992.0871131294818
+  },
+  "terms": {
+    "before": {
+      "yield": 39.8436981176434,
+      "no3": 60.38043261852447,
+      "_yield_pbias": 15.823344221004675,
+      "_alfa": 49.15006934882207,
+      "_barl": 5.322486031616241,
+      "_corn": -10.313189297213276,
+      "_no3_rms_kg": 96.60869218963916,
+      "_pet": 0.010459664594250653,
+      "_pet_ok": true
+    },
+    "after": {
+      "yield": 40.36082081029253,
+      "no3": 58.68945509821367,
+      "_yield_pbias": 14.575205089610051,
+      "_alfa": 49.15072853816689,
+      "_barl": 2.4142959934587154,
+      "_corn": -12.127950927056732,
+      "_no3_rms_kg": 93.90312815714188,
+      "_pet": 0.010459664594250653,
+      "_pet_ok": true
+    }
+  },
+  "parameters": {
+    "orgn_min": {
+      "file": "parameters.bsn",
+      "row": "",
+      "column": "orgn_min",
+      "default": 0.00119,
+      "fitted": 0.0009109215210191908,
+      "bounds": [
+        0.0005,
+        0.006
+      ]
+    },
+    "soilnut1.fr_hum_act": {
+      "file": "nutrients.sol",
+      "row": "soilnut1",
+      "column": "fr_hum_act",
+      "default": 0.02,
+      "fitted": 0.02,
+      "bounds": [
+        0.01,
+        0.25
+      ]
+    },
+    "n_perc": {
+      "file": "parameters.bsn",
+      "row": "",
+      "column": "n_perc",
+      "default": 0.2,
+      "fitted": 0.2,
+      "bounds": [
+        0.01,
+        1.0
+      ]
+    }
+  },
+  "weights": {
+    "yield": 1.0,
+    "no3": 0.25
+  },
+  "evaluations": 64,
+  "held_at_sourced_value": [
+    "n_perc",
+    "soilnut1.fr_hum_act"
+  ]
+}

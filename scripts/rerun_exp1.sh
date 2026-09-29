@@ -6,7 +6,7 @@
 # cap was worth +1,372 $/ha to the open-loop row; `policy - fixed` goes +377 -> -995 once the
 # objectives match. See runs/archive/capped_*/README.md.
 #
-# Run order is the locked one: foresight gate -> controller -> irrigation.
+# Run order is the locked one: foresight gate -> controller -> grower rule -> irrigation.
 #
 #   bash scripts/rerun_exp1.sh                # lambda_n = 0 correction
 #   NO3_PRICE=8  OUT_TAG=n8  bash scripts/rerun_exp1.sh
@@ -27,9 +27,16 @@ N_ENVS="${N_ENVS:-4}"
 # The controller is a 3-parameter fit: the archived run is within 0.01 % of its final value
 # by eval 217 of 504, so 2200 (220 evals) is convergence, not a corner cut.
 GATE_BUDGET="${GATE_BUDGET:-2200}"
+# Same three parameters as the controller, fitted to the logs instead of profit; 220 evals of
+# one 43-run rollout each (~9.5k engine runs).
+GROWER_EVALS="${GROWER_EVALS:-220}"
 # Dominates ceiling cost: one oracle optimisation per window, 15 windows.
 PER_WINDOW_BUDGET="${PER_WINDOW_BUDGET:-2000}"
-# SKIP_CEILING=1 reuses an existing runs/exp1_ceiling.json instead of re-searching it.
+# The foresight gate is **independent of lambda_n**: exp1_ceiling scores every arm at
+# no3_price = 0 by construction, so re-running it per frontier point burns ~1.5 h of engine
+# time to rewrite the same numbers under a new name. It is therefore reused automatically
+# whenever runs/exp1_ceiling.json already exists, and never written per-tag.
+# SKIP_CEILING=0 forces a fresh search anyway; SKIP_CEILING=1 skips even without a file.
 
 suffix=""
 [ -n "$OUT_TAG" ] && suffix="_${OUT_TAG}"
@@ -57,14 +64,28 @@ if [ $? -ne 0 ]; then
 fi
 log "preflight ok"
 
-if [ "${SKIP_CEILING:-0}" = "1" ]; then
+if [ "${SKIP_CEILING:-auto}" = "1" ]; then
     log "=== 1/3 foresight gate: SKIPPED (SKIP_CEILING=1) ==="
+elif [ "${SKIP_CEILING:-auto}" = "auto" ] && [ -f runs/exp1_ceiling.json ]; then
+    log "=== 1/3 foresight gate: reusing runs/exp1_ceiling.json (lambda_n-independent) ==="
 else
     log "=== 1/3 foresight gate (exp1_ceiling) ==="
+    # No per-tag output: one gate serves every frontier point.
     uv run python -m swat_gym.experiments.exp1_ceiling \
-        --budget "$GATE_BUDGET" --per-window-budget "$PER_WINDOW_BUDGET" \
-        ${OUT_TAG:+--out "runs/exp1_ceiling${suffix}.json"} >> "$LOG" 2>&1
+        --budget "$GATE_BUDGET" --per-window-budget "$PER_WINDOW_BUDGET" >> "$LOG" 2>&1
     log "ceiling exit=$?"
+fi
+
+# The gate is a gate: rule "do not start cluster PPO if gate_pass is false" (EXPERIMENTS.md)
+# was enforced by the operator reading a log, which is how a failed gate gets run past.
+if [ -f runs/exp1_ceiling.json ]; then
+    gate=$(uv run python -c "import json;print(json.load(open('runs/exp1_ceiling.json'))['gate_pass'])" 2>/dev/null)
+    log "gate_pass=$gate"
+    if [ "$gate" != "True" ] && [ "${FORCE_PPO:-0}" != "1" ]; then
+        log "FORESIGHT GATE FAILED -- there is nothing to adapt to above the noise floor."
+        log "Stopping before PPO. Write the bounded null, or set FORCE_PPO=1 deliberately."
+        exit 2
+    fi
 fi
 
 log "=== 2/3 feedback controller (exp1_controller) ==="
@@ -74,6 +95,22 @@ uv run python -m swat_gym.experiments.exp1_controller \
     --budget "$GATE_BUDGET" --no3-price "$NO3_PRICE" \
     ${OUT_TAG:+--out "runs/exp1_controller${suffix}.json"} >> "$LOG" 2>&1
 log "controller exit=$?"
+
+log "=== 2b/3 grower rule (exp1_grower_rule) ==="
+# The growers' logged irrigation as a fitted feedback rule: the human bar that can respond to
+# each window's weather, beside the verbatim replay. The *fit* never sees a price, so a frontier
+# point reuses the untagged fit and only re-scores; the untagged run refits on the current model.
+# Exit 3 means the fitted rule missed the logged total by more than 1 % (rule 5) and was not scored.
+if [ -n "$OUT_TAG" ] && [ -f runs/exp1_grower_rule.json ]; then
+    uv run python -m swat_gym.experiments.exp1_grower_rule \
+        --from-fit runs/exp1_grower_rule.json --no3-price "$NO3_PRICE" \
+        --out "runs/exp1_grower_rule${suffix}.json" >> "$LOG" 2>&1
+else
+    uv run python -m swat_gym.experiments.exp1_grower_rule \
+        --evals "$GROWER_EVALS" --no3-price "$NO3_PRICE" \
+        ${OUT_TAG:+--out "runs/exp1_grower_rule${suffix}.json"} >> "$LOG" 2>&1
+fi
+log "grower rule exit=$?"
 
 log "=== 3/3 irrigation (CMA re-optimised uncapped + PPO seeds + frozen) ==="
 uv run python -m swat_gym.experiments.exp1_irrigation \
