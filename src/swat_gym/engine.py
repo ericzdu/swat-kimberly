@@ -1,8 +1,4 @@
-"""Locating and invoking the SWAT+ engine — the only platform-dependent layer.
-
-Drop a platform-native build into ``model/TxtInOut``; :func:`find_engine` picks it by magic
-and ignores backups / wrong-OS siblings. Vendored engines for this project are **rev 62.0.0**.
-"""
+"""Find and run the platform-native SWAT+ rev 62.0.0 engine in model/TxtInOut."""
 from __future__ import annotations
 
 import os
@@ -62,11 +58,7 @@ def _is_executable_binary(path: Path) -> bool:
 
 
 def find_engine(txtinout: Path) -> Path:
-    """Return the platform-native SWAT+ executable inside ``txtinout``.
-
-    Backups (``*.bak``) and wrong-OS binaries (e.g. Linux ELF on macOS) are ignored so both
-    the Mac and Linux rev-62 builds can sit in the same directory.
-    """
+    """Platform-native engine in ``txtinout``; ignores *.bak and wrong-OS binaries."""
     wanted = _wanted_family()
     candidates = sorted(
         p for p in txtinout.iterdir()

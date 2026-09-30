@@ -16,11 +16,7 @@ from swat_gym.rewarders import average
 
 @pytest.mark.slow
 def test_rescoring_matches_a_real_engine_run():
-    """The frontier's central claim: profit at any price is arithmetic, not simulation.
-
-    If this drifts, every sweep table is wrong and nothing warns you — the numbers stay
-    plausible because they are computed from a valid identity applied to the wrong terms.
-    """
+    """Profit at any price must equal the stored-terms identity."""
     prices = average()
     x = default_monthly_i_free()
     try:

@@ -1,9 +1,4 @@
-"""FastRunner must agree with the reference implementation, exactly.
-
-``swat_kimberly.runner.KimberlySwat`` is the path that produced the README's results table.
-FastRunner is an I/O optimization over it, so any disagreement is a bug in FastRunner —
-not a tolerance to widen. Marked slow because it runs the 3-4 s pySWATPlus path.
-"""
+"""FastRunner must exactly match the pySWATPlus reference path (slow)."""
 from __future__ import annotations
 
 import pytest

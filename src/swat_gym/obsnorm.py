@@ -1,23 +1,6 @@
-"""Observation normalisation statistics that travel with a trained policy.
+"""VecNormalize stats saved beside a policy so scoring uses the same obs normalisation.
 
-**Why this exists.** Without observation normalisation, PPO here learns an *exactly constant*
-schedule: measured 2026-08-07, the standard deviation of applied depth across held-out weather
-windows is **0.000 mm** on raw observations and **6.4 mm** with :class:`~stable_baselines3.common.
-vec_env.VecNormalize`. The 13 observation channels are scaled by order-of-magnitude divisors
-rather than statistically, and several sit near zero in practice (``strsn/50``, ``strsw/50`` when
-stress is 0-5), so a network fed them learns to ignore them. Normalising also raised return by
-1,320 $/ha and cut applied water 6,116 -> 5,352 mm.
-
-**Why the statistics are saved separately from the policy.** A policy trained on normalised
-observations *must* be scored on normalised observations. Scoring it on raw ones is not a
-degradation, it is a different objective — the same class of silent divergence as applying a
-nitrogen cap on one code path and not another, which inverted this experiment's headline once.
-SB3 keeps the running statistics inside a ``VecNormalize`` wrapper around the training vector
-env, but scoring runs a single un-vectorised environment, so the statistics are extracted here
-and carried alongside the policy file.
-
-The scorers take the normaliser as a **required** argument. ``None`` means "this policy was
-trained on raw observations" and must be stated, never defaulted.
+Without it PPO learns a constant schedule. Scorers require the normaliser; None = raw obs.
 """
 from __future__ import annotations
 

@@ -1,29 +1,7 @@
-"""Port the reference model's remaining parameters — the ones no earlier port claimed.
+"""Port remaining ArcSWAT reference (HRU 000140001) params: CN2, USLE_P, OV_N, snow, .gw
+aquifer, basin P block, SDNCO, SPCON/SPEXP, CN_FROZ.
 
-**Source: the calibrated ArcSWAT reference model** (`TxtInOut-2`, HRU 119 / subbasin 14 —
-the same Kimberly GRACEnet field). `port_soil.py`, `port_nutrients.py` and
-`port_management.py` between them covered the soil profile, initial nutrients, topography,
-basin N cycling and every management operation. Auditing `000140001.*` against the SWAT+
-tree turned up a further set that was never ported and still carried **A10 template
-defaults**:
-
-* ``CN2`` — the reference's ``.mgt`` sets 75; the SWAT+ tree resolved to **81** through
-  ``landuse.lum -> cntable.lum:legr_strow_g``. Six curve-number points is not cosmetic on a
-  furrow-irrigated silt loam: it moves the runoff/infiltration split, and therefore
-  percolation, which is the signal ``pet_co`` was provisionally rescaled to rescue.
-* ``USLE_P`` (1.00 vs the template's 0.75 cross-slope) and ``OV_N`` (0.14 vs 0.19).
-* The **snow block**. ``SMFMN`` is 0.1 in the reference against a template 4.5 — a factor of
-  45 on the December melt factor, which sets how much of the snowpack leaves before spring.
-* The **groundwater file**. ``000140001.gw`` was never read at all, so specific yield,
-  revap threshold, the ``GWQMN`` return-flow threshold and the initial water-table height
-  were all A10 values. ``revap`` and ``rchg_dp`` happened to match already.
-* The **phosphorus block** of ``basins.bsn`` and three stragglers (``SDNCO``, ``SPCON`` /
-  ``SPEXP``, ``CN_FROZ``).
-
-What is deliberately *not* reverted to the reference: initial soil nitrate and labile P,
-``orgn_min``, soil bulk density and the 2014/2019 irrigation depths. Those are GRACEnet
-primary measurements that outrank the reference — see ``port_nutrients.py`` and
-``port_soil.py`` for the argument in each case.
+Not ported (GRACEnet measurements win): initial NO3/P, orgn_min, bulk density, 2014/2019 irrigation.
 
     uv run python scripts/port_reference_params.py
 """
@@ -34,36 +12,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TIO = ROOT / "model" / "TxtInOut"
 
-#: Name given to the rows this script adds to the shared NRCS lookup tables. The tables ship
-#: as generic land-cover lookups; the reference's values are site measurements and do not
-#: belong in a row that claims to describe "close-seeded legumes" everywhere.
+#: Name for site-specific rows added to shared lookup tables.
 SITE_ROW = "kimb_ref"
 
 # ---------------------------------------------------------------------------------------
 # 000140001.mgt / 000140001.hru
 # ---------------------------------------------------------------------------------------
 
-#: ``CN2 : Initial SCS CN II value`` from ``000140001.mgt``. Soil 80295 is hydrologic group
-#: **C**, so ``cn_c`` is the only column SWAT+ will read for this HRU. The other three keep
-#: the group spacing of the template row they replace (``legr_strow_g``, 58/72/81/85) so the
-#: row stays interpretable if the soil group ever changes; they are not reference values.
+#: CN2 for hydrologic group C (only cn_c is read; others keep template spacing).
 REF_CN2_C = 75.0
 _CN_OFFSETS = {"cn_a": -23.0, "cn_b": -9.0, "cn_c": 0.0, "cn_d": 4.0}
 
 #: ``OV_N : Manning's "n" value for overland flow`` from ``000140001.hru``.
 REF_OV_N = 0.14
 
-#: ``USLE_P : USLE support practice factor`` from ``000140001.mgt``. 1.00 is "no support
-#: practice", which is what ``cons_practice.lum:up_down_slope`` already encodes — so this one
-#: is a pointer change in ``landuse.lum``, not a new table row.
+#: USLE_P 1.0 = up_down_slope (pointer change in landuse.lum).
 REF_CONS_PRACTICE = "up_down_slope"
 
 # ---------------------------------------------------------------------------------------
 # basins.bsn snow block -> snow.sno
 # ---------------------------------------------------------------------------------------
 
-#: SWAT+ column -> (value, SWAT2012 name). ``fall_tmp``, ``melt_max``, ``tmp_lag``,
-#: ``snow_h2o`` and ``cov50`` already matched the reference and are listed for the audit.
+#: SWAT+ column -> (value, SWAT2012 name).
 REF_SNOW = {
     "fall_tmp": (1.0, "SFTMP"),      # already matched
     "melt_tmp": (2.0, "SMTMP"),      # was 0.5
@@ -78,15 +48,7 @@ REF_SNOW = {
 # 000140001.gw -> aquifer.aqu (shallow aquifer row)
 # ---------------------------------------------------------------------------------------
 
-#: SWAT+ column -> (value, SWAT2012 name). SWAT+ carries the two depth thresholds in
-#: **metres** where SWAT2012 used millimetres, hence the /1000.
-#:
-#: ``hl_no3n`` comes from ``basins.bsn:HLIFE_NGW_BSN`` (5 days), not from the HRU ``.gw``
-#: file, whose ``HLIFE_NGW`` is 0 — SWAT2012 reads 0 as "use the basin value".
-#:
-#: Not ported: ``dep_bot``. The reference has no aquifer-bottom parameter; its nearest
-#: relative is ``DEP_IMP`` (6000 mm), which SWAT2012 only reads when the perched-water-table
-#: routine is on (``IWTDN``/``wtable`` = 0 here). The template's 10 m stands.
+#: SWAT+ column -> (value, SWAT2012 name). Depth thresholds mm -> m. hl_no3n from basin value.
 REF_AQUIFER = {
     "dep_wt": (1.0, "GWHT"),            # was 3.0 m
     "alpha_bf": (0.048, "ALPHA_BF"),    # was 0.05
@@ -103,8 +65,7 @@ AQUIFER_SHALLOW = "aqu10"
 # basins.bsn -> parameters.bsn / codes.bsn
 # ---------------------------------------------------------------------------------------
 
-#: The phosphorus block plus three stragglers. ``port_nutrients.py`` owns the nitrogen
-#: parameters and ``orgn_min``; nothing here overlaps with it.
+#: P block + stragglers (N params are owned by port_nutrients.py).
 REF_BASIN = {
     "p_uptake": (10.0, "P_UPDIS"),      # was 20.0
     "p_perc": (11.0, "PPERCO"),         # was 10.0
@@ -114,9 +75,6 @@ REF_BASIN = {
     "lin_sed": (0.0001, "SPCON"),       # was 0.0
     "exp_sed": (1.0, "SPEXP"),          # was 0.0
     "cn_froz": (0.000862, "CN_FROZ"),   # was 0.0
-    # Reach evaporation adjustment. Template left this at 0.6; the reference is 1.0.
-    # On a 1 ha single-HRU build the channel is tiny, so the lever is nearly inert — still
-    # ported so the basin table is not an unexplained A10 leftover.
     "evap_adj": (1.0, "EVRCH"),         # was 0.6
 }
 
@@ -129,11 +87,7 @@ REF_CODES = {"soil_p": (1, "SOL_P_MODEL")}
 # ---------------------------------------------------------------------------------------
 
 def _fmt(val: float | int) -> str:
-    """Five decimals like the rest of the tree, widened when that would lose the value.
-
-    ``CN_FROZ`` is 0.000862; at ``.5f`` it rounds to 0.00086, a 0.2 % haircut on a parameter
-    ported precisely so it would stop being an approximation.
-    """
+    """Format to 5 decimals, more if needed to keep the value."""
     if isinstance(val, int):
         return str(val)
     for places in range(5, 12):
@@ -149,17 +103,7 @@ def _read(path: Path) -> list[str]:
 
 def _set_columns(path: Path, key: str | None, updates: dict[str, float | int],
                  header_line: int = 1, key_col: int = 0) -> dict[str, tuple[str, str]]:
-    """Set named columns on the row whose ``key_col`` token is ``key``.
-
-    Addressing by header name rather than token index is what makes this safe to point at
-    six differently-shaped files: ``aquifer.aqu`` puts an ``id`` before ``name``,
-    ``parameters.bsn`` has no key column at all, and the ``.lum`` tables carry a trailing
-    free-text description. Returns {column: (before, after)} for the caller to report.
-
-    SWAT+ reads these tables free-format, so the rewritten row only has to stay
-    whitespace-separated and in column order -- alignment is cosmetic. (``print.prt`` is the
-    exception and is handled by :mod:`swat_gym.printprt`.)
-    """
+    """Set columns (by header name) on the row where ``key_col`` == ``key``. Returns {col: (before, after)}."""
     lines = _read(path)
     header = lines[header_line].split()
     for name in updates:

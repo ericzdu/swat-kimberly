@@ -1,19 +1,6 @@
 #!/usr/bin/env python3
-"""Is the monthly arm's leaching physical, or an artefact of huge single-day applications?
-
-The monthly action space applies a whole month's water in one ``irrm`` event, up to
-``MONTH_DEPTH_MAX = 200`` mm in a day. The weekly space spreads the *same* annual depth over 26
-events and leaches essentially nothing. Before treating that as an agronomic finding we need to
-know whether SWAT+ is routing 200 mm single-day applications sensibly.
-
-The diagnostic holds **annual applied depth constant** and varies only the number of events, so
-event size is the sole difference. What to look for:
-
-* **Surface runoff should rise with event size.** A 200 mm application exceeds any silt-loam
-  infiltration capacity, so a physical model sheds part of it. If runoff stays flat while
-  percolation absorbs everything, the engine is treating the application as if it infiltrates
-  regardless of rate, and the monthly leaching signal is a modelling artefact.
-* **The balance should close**: irrigation + precip = ET + percolation + runoff + storage change.
+"""Fixed annual depth, varying event count: does runoff respond to event size, and does the
+water balance close? (Justifies MAX_EVENT_MM.)
 
     uv run python scripts/event_size_check.py
 """
@@ -35,8 +22,7 @@ from swat_gym.schedule import CALENDAR, _doy, build
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "runs" / "event_size_check.json"
 
-#: 1 April — first irrigation day of the growing season. Inlined when the weekly action space
-#: was removed 2026-08-07; it was the only thing this script used from it.
+#: 1 April.
 WEEK_START_DOY = _doy(4, 1)
 
 #: Events per growing season. 6 is the monthly arm, 26 the weekly one.
@@ -108,9 +94,7 @@ def main() -> list[dict]:
               f"{r.get('surq_gen',0):>8.2f}{r['no3_kg']:>8.2f}"
               f"{r['balance_residual_mm']:>8.1f}")
 
-    # The question is whether runoff *responds* to event size, not whether it is non-zero.
-    # An earlier version of this check tested `max(runoff) > 1.0` and passed a model whose
-    # runoff was flat at 2.3 mm/yr while event size varied 17-fold — the wrong test.
+    # Test that runoff responds to event size, not that it's non-zero.
     runoff = [r.get("surq_gen", 0.0) for r in rows]
     biggest, smallest = rows[0], rows[-1]
     spread = max(runoff) - min(runoff)

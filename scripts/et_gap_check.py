@@ -1,34 +1,8 @@
 #!/usr/bin/env python3
-"""How far is this model's *in-crop* ET from measured crop ET? Report only, nothing applied.
+"""Report in-crop ET gap vs a regional OpenET benchmark (report only, nothing applied).
 
-The paper model is calibrated on the **demand** side only: ``pet_co = 0.964`` is fitted to
-measured AgriMet grass-reference ETos (PROVENANCE §5h) and actual ET has never had a measured
-target — it is compared to the ArcSWAT reference model, which is tier 2 and explicitly not
-validation. The prescribed calibration protocol is the other way round: remove nutrient stress,
-then move ``lai_pot`` and ``esco`` until **ET** matches, and touch PET only if you must.
-
-This script measures the gap that protocol would be closing, without changing a single input.
-It answers three questions and stops:
-
-1. **How biased is in-crop ET?** Per crop-year, over each crop's own emerge→last-harvest window
-   (:data:`scripts.monoculture.CROPS`), because outside the window the field is bare and the
-   difference there is management, not canopy — window scoring moved a sibling fit's wheat bias
-   from −30.3 % to −14.6 % at unchanged parameters.
-2. **Is the PET ceiling binding?** SWAT+ caps actual ET at PET, so if measured ET/simulated PET
-   ≥ 1 in-window then no ``lai_pot``/``esco`` setting can reach the target and step 3 of the
-   protocol is forced. This is the specific check that decided it in the sibling project
-   (obs/PET 1.04 corn, 1.03 wheat, 1.02 alfalfa at ``pet_co`` 0.964).
-3. **How much of the gap is definitional?** ``pet_co`` was fitted to *grass*-reference ET; a
-   full canopy runs a crop coefficient of roughly 1.15–1.2× that. The implied Kc is reported so
-   the gap can be read as "wrong parameter" or "right parameter, wrong reference definition".
-
-**What the target is, and what it is not.** ``--openet`` reads the OpenET eeMetric series built
-for the sibling project. That series is **21 different fields** across the Magic Valley, three
-crop-years each (2020, 2021, 2022) — *not this field, and not these years*. It is a regional
-per-crop benchmark and it is reported as a range across those fields. Nothing here is a
-validation of this field's water balance, and nothing here should be written up as one. The
-one on-site series is AgriMet ETos, which is already matched to +0.0 % and is a *reference* ET,
-not a crop ET.
+Reports: per crop-year in-window ET bias, whether PET caps ET (obs/PET >= 1), and implied Kc.
+OpenET is 21 other Magic Valley fields, 2020-22: a regional benchmark, not on-site validation.
 
     uv run python scripts/et_gap_check.py
     uv run python scripts/et_gap_check.py --openet ~/Desktop/projects/Ai-SWAT-Plus/\\
@@ -56,9 +30,7 @@ REF_CSV = ROOT / "data" / "reference_hru119.csv"
 ET_CSV = ROOT / "data" / "observed_et_agrimet.csv"
 OUT = ROOT / "runs" / "et_gap_check.json"
 
-#: Default location of the sibling project's OpenET series. Absent by design from this repo:
-#: it belongs to the per-crop project, and copying it here would invite it being cited as an
-#: on-site measurement.
+#: Sibling project's OpenET series (not vendored here on purpose).
 OPENET_DEFAULT = (Path.home() / "Desktop/projects/Ai-SWAT-Plus/swat-kimberly-calibration"
                   / "data" / "et_reference.csv")
 
@@ -111,15 +83,7 @@ def observed_openet(path: Path) -> pd.DataFrame:
 
 
 def measured_kc(openet: pd.DataFrame, etos_daily: pd.DataFrame) -> pd.DataFrame:
-    """Measured seasonal crop coefficient: regional crop ET over on-site ETos, same window.
-
-    This is the comparison that survives the years not matching. The OpenET fields are
-    2020-2022 and this model's rotation is 2013-2019, so comparing ET *depths* across them
-    confounds the model gap with whatever those seasons' weather did. A crop coefficient
-    divides that out: both numerator and denominator move with the weather, and what is left
-    is how much water the crop takes relative to a grass reference — a crop property, stable
-    across years, and directly comparable to the model's own implied Kc.
-    """
+    """Measured Kc = regional crop ET / on-site ETos (removes year mismatch)."""
     d = etos_daily.copy()
     dt = pd.to_datetime(d["year"].astype(str), format="%Y") + pd.to_timedelta(d["jday"] - 1, "D")
     d["md"] = _md(dt.dt.month, dt.dt.day)
@@ -200,8 +164,6 @@ def main() -> None:
 
     etos = observed_etos(pd.read_csv(ET_CSV), crops)
     sim["etos_in_window"] = [etos.get(y, float("nan")) for y in sim["year"]]
-    # What crop coefficient the model is implicitly running: in-crop ET over measured
-    # grass-reference ET across the same days.
     sim["implied_kc"] = sim["sim_et"] / sim["etos_in_window"]
     sim["sim_et_over_pet"] = sim["sim_et"] / sim["sim_pet"]
 
@@ -250,8 +212,6 @@ def main() -> None:
                   f"{f'{g.obs_et.min():.0f}-{g.obs_et.max():.0f}':>16} {sim_mean:>9.0f}"
                   f" {pb:>+7.1f}% {ceiling:>11.2f}")
         summary["by_crop"] = by_crop
-        # The years do not overlap, so the depth comparison above confounds the model gap with
-        # season-to-season weather. Crop coefficients divide that out.
         kc = measured_kc(raw, pd.read_csv(ET_CSV))
         print(f"\nseasonal crop coefficient (ET / on-site grass ETos, same window) — the "
               f"comparison\nthat survives the years not overlapping:")

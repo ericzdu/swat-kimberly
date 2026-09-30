@@ -1,60 +1,9 @@
-"""One lever, five rows, a human bar inside the experiment. Shared by Exp 1, 2 and 3.
+"""Shared focused-experiment runner: one free arm, scored against controls.
 
-The three focused experiments differ only in which :data:`~swat_gym.env.ARMS` entry is free,
-so the machinery lives here once and each ``expN_*.py`` is an entry point that names its arm.
-
-Five rows, and two of them are controls
----------------------------------------
-========================  =========================================================
-``measured``              the field's own shipped ``management.sch``, replayed verbatim
-``grower``                the same behaviour as a fitted rule (:mod:`exp1_grower_rule`) — the
-                          human bar that can respond to each window's weather
-``default``               **``DEFAULT_PLAN`` through the same schedule generator**
-``fixed``                 best non-adaptive plan for this lever, CMA-ES
-``policy``                PPO on the annual-cadence env
-``frozen``                **the policy's own plan, replayed as a fixed schedule**
-========================  =========================================================
-
-``default`` is the like-for-like baseline and ``measured`` is the realism check; an arm's gain
-should be read against the first and sanity-checked against the second. They differ because a
-generated fixed-interval schedule is not the shipped irregular one even when both are aimed at
-measured practice, and last round that residual was mistaken for the lever: two compounding
-defects (:data:`~swat_gym.schedule.IRR_EFF` at 0.85, and an irrigation depth that integrated to
-3,060 mm against a measured 3,938.8) meant every optimized row was scored against a *drier*
-field than the human bar. Both are fixed, but the row stays: the whole point of a control is
-that it is measured rather than assumed to be zero.
-
-``frozen`` exists because last round's headline (+12.9 % for PPO) survived until it was run
-and then did not: the policy's own frozen plan scored *higher* than the adaptive policy, so
-the advantage was never adaptivity, it was that PPO had found a better constant than CMA-ES
-did on 1/30th the budget. Reporting ``policy`` against ``fixed`` alone cannot tell those apart.
-It costs one engine run per held-out window.
-
-Budgets are matched in engine runs
-----------------------------------
-PPO's ``total_timesteps`` and CMA-ES's evaluation count are different units.
-:class:`~swat_gym.env.SwatEnv` does exactly one ``runner.run`` per step and ``evaluate`` one
-per evaluation, so both convert to engine runs and both are held to ``--budget``. The counts
-are then read back off :attr:`FastRunner.n_runs` and reported, so the claim is measured rather
-than asserted.
-
-What is held fixed
-------------------
-Prices are the 2022-24 average vector (:func:`~swat_gym.rewarders.average`), fixed for all
-three experiments. Everything outside the arm sits at measured practice via ``DEFAULT_PLAN``.
-For Exp 1 and 3 that pins irrigation **against the ``default`` row** — water cost is the same
-constant in ``default``, ``fixed``, ``policy`` and ``frozen``, so it cannot move comparisons
-among them and the scored ``DEFAULT_WATER`` is neutralised there. It is *not*
-the same constant in ``measured``, which irrigates on its own irregular record; that is one of
-the reasons ``measured`` is a context row rather than the denominator. Exp 2 has no such
-protection and needs a real district rate.
-
-Every row carries its cost decomposition
-----------------------------------------
-:func:`_row` keeps ``revenue`` and all four cost terms, not just their difference. Profit is
-linear in every price, so a stored row can be re-priced for any input **without re-running the
-engine** — which is how a contingency like "$1,038 of this headline is the arbitrary $5/Mg
-manure haulage price" gets reported as a sensitivity row rather than rediscovered by a rerun.
+Rows: measured (shipped schedule replayed), grower (fitted rule), default (DEFAULT_PLAN via
+generator; quote gains vs this), fixed (CMA-ES), policy (PPO), frozen (policy's plan replayed
+fixed; separates adaptivity from better search). Budgets matched in engine runs. Prices fixed
+at rewarders.average(). Rows keep cost terms so they can be re-priced without rerunning.
 """
 from __future__ import annotations
 
@@ -84,56 +33,26 @@ assert_no_leakage()
 
 
 def _row(d: dict, start_year: int, *, yield_mg: float | None = None) -> dict:
-    """One window's outcome, with the profit identity kept separable — see the module docstring.
-
-    ``revenue - water_cost - manure_cost - fert_cost - op_cost`` reconstructs ``profit``
-    exactly (leaching is only in it when ``no3_price`` was set), so any of the five prices can
-    be varied after the fact on a frozen plan.
-    """
+    """One window's outcome with separable cost terms."""
     return {"start_year": start_year, "profit": d["profit"],
             "revenue": d["revenue"], "water_cost": d["water_cost"],
             "manure_cost": d["manure_cost"], "fert_cost": d["fert_cost"],
             "op_cost": d["op_cost"], "n_fert_events": d["n_fert_events"],
             "irrigation_mm": d["irrigation_mm"], "manure_mg": d["manure_mg"],
             "fert_n_kg": d["fert_n_kg"], "no3": d["no3_leached_kg"],
-            # Reported, never priced: intensity metrics need them and they cost nothing here.
             "n2o_kg": d.get("n2o_kg"), "yield_mg": yield_mg}
 
 
-#: Bootstrap replicates for :func:`paired`. Fixed, and the seed with it, so an interval is a
-#: property of the rows rather than of when it was computed.
+#: Fixed bootstrap size and seed for reproducible intervals.
 N_BOOT = 10_000
 BOOT_SEED = 0
 
 
 def paired(a: list[dict], b: list[dict], *, n_boot: int = N_BOOT,
            seed: int = BOOT_SEED) -> dict:
-    """The per-window paired difference ``a - b``, with an interval that respects the design.
+    """Paired per-window difference a - b. Quote se_ess (windows overlap; rule 7).
 
-    Paired, because both rows are scored on the **same** weather windows in the same order:
-    the window-to-window spread of profit is far larger than the differences between rows, and
-    an unpaired comparison would drown every result in it. Without this, a headline was a bare
-    mean of 7 windows with no dispersion at all, read against a noise floor that
-    :data:`~swat_gym.env.ACTION_DIM` estimates at 200-300 $/ha — so "PPO loses by 696" had no
-    way to be checked.
-
-    **There is deliberately no key called ``se``.** The five held-out windows are eight years
-    long and start one year apart, so they share up to seven of their eight years;
-    ``sd / sqrt(n)`` treats them as five independent draws and overstates precision by about
-    ``sqrt(n / ESS)`` ≈ 2×. `CLAUDE.md` rule 7 forbids publishing it, so it is reported under
-    the name ``se_naive`` — kept only because the ratio to ``se_ess`` is the thing a reader
-    needs to see — and the number to quote is ``se_ess``, which divides by the effective sample
-    size from :func:`~swat_gym.windows.effective_n` (1.25 for the test set, not 5).
-
-    Both intervals are reported, and they answer different questions:
-
-    * ``ci95_boot`` — percentile bootstrap resampling windows. It captures the shape of the
-      per-window differences (they are not Gaussian, and n = 5) but **still treats the windows
-      as exchangeable and independent**, so it is optimistic in exactly the way ``se_naive`` is.
-    * ``ci95_ess`` — ``mean ± 1.96 · se_ess``. Wide, and still optimistic: it uses a normal
-      quantile where ESS = 1.25 would demand a t quantile at 0.25 degrees of freedom, which is
-      enormous. With this design, an honest reading of a difference smaller than a few hundred
-      $/ha is "not resolvable", and that is a fact about the split, not about the method.
+    No ``se`` key on purpose; se_naive is kept only to show the ratio.
     """
     d = np.array([r["profit"] for r in a]) - np.array([r["profit"] for r in b])
     n = int(d.size)
@@ -158,14 +77,8 @@ def paired(a: list[dict], b: list[dict], *, n_boot: int = N_BOOT,
             "per_window": [round(float(v), 1) for v in d]}
 
 
-# -- row 1: the human bar ------------------------------------------------------------------
-
 def score_measured(windows, prices: Prices, no3_price: float) -> list[dict]:
-    """The shipped ``management.sch``, unmodified, on each weather window.
-
-    Only ``time.sim`` is rewritten. Nothing generates a schedule here — the point is to score
-    what the growers actually did, so any plan we build would defeat the purpose.
-    """
+    """Shipped management.sch replayed on each window (only time.sim changes)."""
     out = []
     with FastRunner() as runner:
         for sy in windows:
@@ -174,19 +87,13 @@ def score_measured(windows, prices: Prices, no3_price: float) -> list[dict]:
     return out
 
 
-#: The fitted grower rule, produced by :mod:`exp1_grower_rule`. Exp 2 re-scores it rather than
-#: refitting, so both experiments carry the *same* human rule.
+#: Output of exp1_grower_rule; reused by Exp 2.
 GROWER_FIT = ROOT / "runs" / "exp1_grower_rule.json"
 
 
 def score_grower(windows, prices: Prices, no3_price: float, max_n) -> list[dict]:
-    """The growers' irrigation as a fitted feedback rule (:mod:`exp1_grower_rule`), on each window.
-
-    The replayed log (:func:`score_measured`) is one fixed schedule on weather it never saw; this
-    is the same behaviour distilled into a rule that responds to each window's weather. Nitrogen
-    sits at ``DEFAULT_PLAN`` (measured practice) and ``max_n`` must match the other rows.
-    """
-    from .exp1_controller import rollout_controller   # exp1_controller imports this module
+    """Fitted grower irrigation rule on each window; N at DEFAULT_PLAN."""
+    from .exp1_controller import rollout_controller   # avoid circular import
 
     if not GROWER_FIT.is_file():
         raise SystemExit(f"{GROWER_FIT.name} missing: run `python -m "
@@ -204,25 +111,12 @@ def score_grower(windows, prices: Prices, no3_price: float, max_n) -> list[dict]
     return out
 
 
-# -- row 2: the optimized fixed schedule ---------------------------------------------------
-
-#: Seconds between CMA-ES partial checkpoints. **Time-based, not evaluation-based.** An
-#: eval-count interval sounds equivalent and is not: engine throughput on this machine swings
-#: from 4.0 runs/s idle to under 2 runs/s when swap is full, so a 500-eval interval that means
-#: 4 minutes on a quiet box means over half an hour on a loaded one — and a 330 s test run
-#: never reached it at all. Flushing on a clock bounds the worst-case loss to this many seconds
-#: no matter how slowly the engine is turning.
+#: CMA-ES checkpoint interval in seconds (time-based; engine throughput varies).
 PARTIAL_SECONDS = 120.0
 
 
 def _load_partial(path: Path | None, cfg: dict):
-    """A mid-search CMA-ES checkpoint, if one exists and was produced at this configuration.
-
-    The config guard is not optional. The partial used to carry no configuration at all, so a
-    checkpoint left by a run at a different ``--max-n`` (or different prices, or a different
-    arm) would be silently resumed into the current one — a search seeded from the answer to a
-    different question, reported as if it were this one's.
-    """
+    """CMA-ES checkpoint, only if its config matches."""
     if path is None or not path.is_file():
         return None
     try:
@@ -237,19 +131,7 @@ def _load_partial(path: Path | None, cfg: dict):
 
 def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
                    partial_path: Path | None = None, cfg: dict | None = None):
-    """CMA-ES over the arm's free parameters, checkpointing the strategy as it goes.
-
-    The search always starts from :func:`~swat_gym.env.default_free` — measured practice on the
-    arm's own dimensions. The ``x0`` warm-start parameter was removed on **2026-09-09** with
-    Exp 4: it existed solely so the joint search could start from the composed single-lever
-    optimum, and with no joint arm there is nothing to compose.
-
-    ``evals`` is the **total** budget. A resume restores the pickled
-    :class:`cma.CMAEvolutionStrategy` — covariance and step size included — so it finishes at
-    the same evaluation count, and in the same search state, as an uninterrupted run would.
-    Checkpoints are written at generation boundaries, the only points where the strategy is
-    internally consistent, and are throttled to :data:`PARTIAL_SECONDS`.
-    """
+    """CMA-ES from default_free(arm). ``evals`` is the total budget; resumes full CMA state."""
     prev = _load_partial(partial_path, cfg)
     state, done = (prev["state"], prev["evals"]) if prev else (None, 0)
     if prev:
@@ -282,7 +164,7 @@ def optimize_fixed(arm, train_windows, evals, seed, prices, no3_price, max_n,
         start = default_free(arm)
         best, n_evals, history = minimise(score, start, evals=evals, seed=seed,
                                           state=state, on_generation=checkpoint)
-        # Engine runs spent before this process started, at one run per window per evaluation.
+        # Include runs spent before a resume.
         n_runs = runner.n_runs + done * len(train_windows)
     return best, n_evals, n_runs, history
 
@@ -294,10 +176,8 @@ def score_fixed(x, arm, windows, prices, no3_price, max_n) -> list[dict]:
                               no3_price=no3_price, max_n=max_n), sy) for sy in windows]
 
 
-# -- rows 3 and 4: the policy, and its own plan frozen -------------------------------------
-
 def score_policy(model, arm, windows, prices, no3_price, max_n):
-    """Held-out scores plus, per window, the concrete plan the policy chose."""
+    """Policy scores and the plan it chose per window."""
     rows, plans = [], {}
     with SwatEnv(stochastic_weather=False, prices=prices, no3_price=no3_price, arm=arm,
                  max_n=max_n) as env:
@@ -313,11 +193,7 @@ def score_policy(model, arm, windows, prices, no3_price, max_n):
 
 
 def score_plan(plan: list[YearAction], windows, prices, no3_price) -> list[dict]:
-    """Replay one fixed plan across windows — the adaptivity control.
-
-    The plan came out of an adaptive rollout, but here it is applied verbatim to every window
-    regardless of what the weather does, so anything it scores is *not* adaptivity.
-    """
+    """Replay one fixed plan on every window (adaptivity control)."""
     with FastRunner() as runner:
         out = []
         for sy in windows:
@@ -334,12 +210,7 @@ def make_env(arm, train_years, prices, seed, no3_price, max_n):
 
 
 def train_policy(arm, args, cfg, prices, max_n, seed: int):
-    """Train one PPO policy at ``seed``, resuming if a checkpoint for this exact config exists.
-
-    Every artefact is keyed by seed *and* by the config digest, so replicates never collide and
-    a stale policy — one trained at a different cap, or against a different observation width —
-    is never found rather than being silently loaded.
-    """
+    """Train PPO at ``seed``; resume only from checkpoints keyed by seed + config digest."""
     from stable_baselines3 import PPO
     from stable_baselines3.common.callbacks import CheckpointCallback
     from stable_baselines3.common.vec_env import SubprocVecEnv
@@ -364,10 +235,7 @@ def train_policy(arm, args, cfg, prices, max_n, seed: int):
             print(f"  seed {seed}: resuming from {resume[-1].name} at "
                   f"{model.num_timesteps} steps", flush=True)
         else:
-            # gamma=1.0: the objective is *total* rotation profit over a fixed 7-year horizon,
-            # so there is no reason to discount. log_std_init=-1 narrows the initial policy to
-            # sigma~0.37 on a unit box; SB3's default sigma=1 explores almost entirely in the
-            # clipped region.
+            # gamma=1: undiscounted rotation total. log_std_init=-1: sigma~0.37 on unit box.
             print(f"  seed {seed}: training {args.budget} timesteps", flush=True)
             model = PPO("MlpPolicy", venv, seed=seed, verbose=0,
                         n_steps=max(64, N_YEARS * 8), batch_size=max(32, N_YEARS * 4),
@@ -393,26 +261,15 @@ def mean(rows) -> float:
     return float(np.mean([r["profit"] for r in rows]))
 
 
-# -- surviving being killed -----------------------------------------------------------------
-
 def _stage(out: Path, name: str) -> Path:
     return out.with_name(f"{out.stem}_{name}.json")
 
 
 def _water_breakeven(a: list[dict], b: list[dict], prices: Prices) -> dict:
-    """Water price at which ``a``'s profit advantage over ``b`` disappears.
-
-    Profit is linear in the water price, so the advantage at price *p* is
-    ``(A - B) - p * (mm_A - mm_B)`` where A, B are profits at the scored price with its water
-    term added back. The root is exact arithmetic on stored rows — no engine involved — which
-    is the point: it converts a result that depends on the scored ``DEFAULT_WATER`` into a
-    statement of the form "this holds for any price below X", covering the sourced
-    ``WATER_PRICE_RANGE`` without another engine run.
-    """
+    """Water price at which a's advantage over b vanishes (profit is linear in price)."""
     adv = mean(a) - mean(b)
     dmm = float(np.mean([r["irrigation_mm"] for r in a])
                 - np.mean([r["irrigation_mm"] for r in b]))
-    # Advantage is flat in the water price when both rows apply the same water.
     if abs(dmm) < 1e-9:
         return {"scored_price": prices.water, "delta_mm": dmm, "breakeven": None,
                 "note": "advantage does not depend on the water price"}
@@ -422,19 +279,7 @@ def _water_breakeven(a: list[dict], b: list[dict], prices: Prices) -> dict:
 
 
 def model_digest() -> str:
-    """Digest of the calibrated model inputs, for keying any resumable artefact.
-
-    ``_cfg_key`` covers everything the training objective depends on *in code*. The model
-    parameters on disk are equally part of the objective and were **not** covered, so a
-    config-identical invocation resumed straight across a recalibration. Measured 2026-09-11:
-    after the refit, ``rerun_exp1.sh`` completed stage 3 in **three minutes** — it reused the
-    2026-08-29 CMA plan and all three PPO policies, which had been searched on the *pre-refit*
-    model, and merely re-scored them. The log said ``exit=0`` and the artefact looked complete.
-
-    That is the failure hard rule 2 names: a difference between what was searched and what was
-    scored, invisible in the result. Hashing ``params.CALIBRATABLE`` closes it, because that is
-    exactly the set a calibration or a port writes.
-    """
+    """Hash of CALIBRATABLE model files, so checkpoints never resume across a recalibration."""
     from swat_gym.fastrunner import TXTINOUT
     from swat_gym.params import CALIBRATABLE
 
@@ -447,12 +292,12 @@ def model_digest() -> str:
 
 
 def _cfg_key(cfg: dict) -> str:
-    """Short stable digest of a run configuration, for keying artefacts by path."""
+    """Short stable digest of a run config."""
     return hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:10]
 
 
 def _load_stage(out: Path, name: str, cfg: dict):
-    """A completed stage's payload, if it exists and was produced at this configuration."""
+    """Completed stage payload if config matches."""
     p = _stage(out, name)
     if not p.is_file():
         return None
@@ -471,18 +316,8 @@ def _save_stage(out: Path, name: str, cfg: dict, payload) -> None:
     _stage(out, name).write_text(json.dumps({"config": cfg, "payload": payload}, indent=2))
 
 
-# -- the experiment ------------------------------------------------------------------------
-
 def _max_n_arg(text: str) -> float | None:
-    """Parse ``--max-n``: a number, or ``none``/``off`` for an uncapped run.
-
-    There is no default. `CLAUDE.md` rule 2 exists because a cap applied on one code path and
-    not another changes what is simulated without changing what is priced — which inverted
-    Exp 1's headline once. The cap also binds hard on the baseline itself (``DEFAULT_PLAN``
-    applies 569 and 936 kg N/ha in its two fertilised years, both clipped to 400), so a run
-    under a different cap is a run in a different world, not a stricter version of the same
-    one. Making it explicit is what stops two experiments being composed across that line.
-    """
+    """Parse --max-n: number or none/off. No default on purpose (rule 2)."""
     t = text.strip().lower()
     if t in {"none", "off", "uncapped"}:
         return None
@@ -530,22 +365,13 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     else:
         sub = list(np.linspace(0, len(TRAIN_YEARS) - 1, args.fixed_windows).round().astype(int))
         fixed_windows = [TRAIN_YEARS[i] for i in sorted(set(sub))]
-    # One CMA-ES evaluation costs one engine run per training window, so the budget converts
-    # to evaluations by dividing. PPO takes the budget directly, one run per timestep.
+    # CMA eval = one run per window; PPO = one run per timestep.
     evals = max(1, args.budget // len(fixed_windows))
     print(f"arm={arm}  prices={prices.label}  budget={args.budget} engine runs  "
           f"cap={'none' if max_n is None else f'{max_n:g}'} kg N/ha\n"
           f"fixed-schedule windows: {fixed_windows}  -> {evals} CMA-ES evals", flush=True)
 
-    # Every stage checkpoints. This machine sits at ~85 MB free RAM with swap effectively
-    # full, and jetsam has already killed two multi-hour runs outright — so the run is broken
-    # into resumable stages rather than one all-or-nothing block.
-    # The environment's own semantics are in the key, not just the experiment's arguments. A
-    # checkpoint is only reusable if the env that produced it is the env now running, and the
-    # three changes this round — the irrigation efficiency, the recalibrated default depth, and
-    # the widened observation — are each invisible in the argument list. `obs_dim` in particular
-    # must be here: a stale PPO policy with a 7-wide input silently loads against an 11-wide
-    # space. Keying on the values themselves means no one has to remember to bump a revision.
+    # Resumable stages; key includes env semantics (obs_dim, irr_eff, defaults).
     cfg = {"arm": arm, "budget": args.budget, "seed": args.seed, "max_n": max_n,
            "no3_price": args.no3_price, "fixed_windows": fixed_windows,
            "prices": prices.label, "fert_op": prices.fert_op, "manure": prices.manure,
@@ -562,9 +388,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
         measured_test, measured_train = stage["test"], stage["train"]
     print(f"measured practice (human bar): held-out {mean(measured_test):.0f} $/ha", flush=True)
 
-    # The like-for-like control: DEFAULT_PLAN through the same generator the arms use, so the
-    # only thing separating it from `fixed` is the arm's own dimensions. Two engine runs per
-    # window, and it is the row the lever's gain should actually be quoted against.
+    # Like-for-like control: quote lever gains against this.
     stage = _load_stage(args.out, "default", cfg)
     if stage is None:
         default_test = score_fixed(np.zeros(0), "baseline", TEST_YEARS, prices,
@@ -578,9 +402,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     print(f"DEFAULT_PLAN baseline (like-for-like): held-out {mean(default_test):.0f} $/ha "
           f"({mean(default_test) - mean(measured_test):+.0f} vs human)", flush=True)
 
-    # The replayed log is one fixed schedule on weather it never saw; the grower rule is the same
-    # behaviour as a rule that responds to each window. Keyed on the fitted parameters too, so a
-    # refit of the rule cannot resume into a stale row.
+    # Keyed on fitted params so a refit can't resume a stale row.
     grower_abc = json.loads(GROWER_FIT.read_text())["abc"] if GROWER_FIT.is_file() else None
     gcfg = {**cfg, "grower_abc": grower_abc}
     stage = _load_stage(args.out, "grower", gcfg)
@@ -595,8 +417,6 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
 
     stage = _load_stage(args.out, "fixed", cfg)
     if stage is None:
-        # Resume from a partial if a previous attempt was killed mid-search. `evals` is the
-        # total, and optimize_fixed subtracts whatever the checkpoint already spent.
         pp = _stage(args.out, "fixed").with_suffix(".partial.pkl")
         x, n_evals, fixed_runs, cma_history = optimize_fixed(
             arm, fixed_windows, evals, args.seed, prices, args.no3_price,
@@ -613,10 +433,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
           flush=True)
 
     t1 = time.time()
-    # Seeds share one CMA-ES row on purpose. The baseline is a near-deterministic search over a
-    # fixed objective; the policy is the stochastic half, and it is the half whose null the
-    # experiment reports. Replicating only PPO buys the variance estimate that matters at one
-    # PPO stage per seed instead of a whole run per seed.
+    # One shared CMA-ES row; only PPO is replicated across seeds.
     seeds = [args.seed + 100 * i for i in range(max(1, args.ppo_seeds))]
     models = {s: train_policy(arm, args, cfg, prices, max_n, s) for s in seeds}
     t_rl = time.time() - t1
@@ -624,20 +441,16 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     fixed_test = score_fixed(x, arm, TEST_YEARS, prices, args.no3_price, max_n)
     fixed_train = score_fixed(x, arm, fixed_windows, prices, args.no3_price, max_n)
 
-    # Frozen plan is selected on **training** windows, then that single plan is scored on
-    # test. Selecting the best of N candidates on the test set itself biased adaptivity
-    # negative by construction (expected max of N noisy estimates).
+    # Frozen plan selected on train, scored on test (rule 6).
     per_seed = {}
     for s, model in models.items():
         p_test, p_plans = score_policy(model, arm, TEST_YEARS, prices, args.no3_price, max_n)
         p_train, p_plans_train = score_policy(model, arm, fixed_windows, prices,
                                               args.no3_price, max_n)
-        # Score each train-emitted plan on the train set; pick the best train mean.
         fz_train = {sy: score_plan(pl, fixed_windows, prices, args.no3_price)
                     for sy, pl in p_plans_train.items()}
         fz_train_means = {sy: mean(rows) for sy, rows in fz_train.items()}
         bf = max(fz_train_means, key=fz_train_means.get)
-        # Replay the train-selected plan on test (and keep the full test distribution too).
         frozen_test = score_plan(p_plans_train[bf], TEST_YEARS, prices, args.no3_price)
         fz_test_dist = {sy: score_plan(pl, TEST_YEARS, prices, args.no3_price)
                         for sy, pl in p_plans.items()}
@@ -651,12 +464,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
                        "adaptivity_value": mean(p_test) - mean(frozen_test)}
 
     def across(k):
-        """Mean and standard error of ``k`` across seeds — the seed-variance estimate.
-
-        ``sd / sqrt(n_seeds)`` is the *correct* estimator here and is deliberately unlike the
-        window-paired one: PPO seeds are independent draws, whereas the held-out windows
-        overlap. Keyed ``se`` rather than ``se_naive``/``se_ess`` for that reason.
-        """
+        """Mean and SE across seeds (seeds are independent, so plain ``se`` is correct)."""
         v = np.array([per_seed[s][k] for s in seeds])
         return {"mean": float(v.mean()),
                 "se": float(v.std(ddof=1) / np.sqrt(v.size)) if v.size > 1 else float("nan"),
@@ -665,23 +473,16 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     seed_stats = {k: across(k) for k in
                   ("policy_test", "frozen_best_test", "adv", "adaptivity_value")}
 
-    # The representative seed for the detailed rows is the *median* performer, not the best:
-    # reporting the best of N seeds is the selection bias a seed study exists to remove.
+    # Representative seed = median, not best.
     rep = sorted(seeds, key=lambda s: per_seed[s]["policy_test"])[len(seeds) // 2]
     r = per_seed[rep]
     policy_test, policy_train, plans = r["test"], r["train"], r["plans"]
     frozen, frozen_means, best_frozen = r["frozen"], r["frozen_means"], r["best_frozen"]
 
     adv = mean(policy_test) - mean(fixed_test)
-    # What adaptivity is worth, in dollars: the policy against its own plan frozen. Negative
-    # means the policy would have done better committing to a constant schedule in advance.
+    # Policy minus its own frozen plan.
     adaptivity_value = mean(policy_test) - frozen_means[best_frozen]
-    # The *share* of the policy's edge attributable to adaptivity — defined only when there is
-    # an edge to apportion. Reporting it unconditionally was a sign trap: with the policy
-    # 664 $/ha behind CMA-ES and 115 behind its own frozen plan, both numerator and denominator
-    # go negative and the ratio comes back "+17 % attributable to adaptivity", which reads as a
-    # positive finding about the exact quantity it is refuting. `adaptivity_value` is the
-    # number to report; the share is None when the premise for it does not hold.
+    # Share only defined when adv > 0 (else sign trap).
     adaptivity_share = (adaptivity_value / adv) if adv > 0 else None
 
     summary = {
@@ -702,9 +503,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
             "policy_train": mean(policy_train), "policy_test": mean(policy_test),
             "frozen_best_test": frozen_means[best_frozen],
         },
-        # `vs_default` is the lever's attributable gain — same generator, same irrigation, same
-        # everything but the arm. `vs_measured` mixes that with the generator gap and is kept
-        # as the realism check, not as the headline.
+        # vs_default = attributable gain; vs_measured = realism check.
         "vs_default": {
             "fixed": mean(fixed_test) - mean(default_test),
             "policy": mean(policy_test) - mean(default_test),
@@ -716,8 +515,6 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
             "policy": mean(policy_test) - mean(measured_test),
             "frozen": frozen_means[best_frozen] - mean(measured_test),
         },
-        # The grower rule is the human bar that can respond to weather; `vs_measured` above is
-        # against the replayed log, which cannot.
         "vs_grower": {
             "default": mean(default_test) - mean(grower_test),
             "fixed": mean(fixed_test) - mean(grower_test),
@@ -726,8 +523,6 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
         "grower_fit": {"abc": grower_abc, "source": GROWER_FIT.name,
                        "note": "fitted to 2013-2019 logged behaviour; a reference row, "
                                "not a learned arm"},
-        # Every comparison with its per-window spread, so a difference can be read against the
-        # noise instead of being quoted bare.
         "paired_test": {
             "default_vs_measured": paired(default_test, measured_test),
             "fixed_vs_default": paired(fixed_test, default_test),
@@ -742,9 +537,6 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
         "adaptivity_value": adaptivity_value,
         "adaptivity_share": adaptivity_share,
         "ppo_seeds": seeds, "representative_seed": rep, "across_seeds": seed_stats,
-        # Profit is linear in every price, so the water price at which the policy's advantage
-        # vanishes is arithmetic on stored rows rather than a rerun. Reporting the breakeven is
-        # what lets the scored price (DEFAULT_WATER) stop being load-bearing.
         "water_breakeven": _water_breakeven(policy_test, fixed_test, prices),
         "best_frozen_window": best_frozen,
         "frozen_means": {str(k): v for k, v in frozen_means.items()},
@@ -776,9 +568,7 @@ def run(arm: str, out_path: Path, argv=None) -> dict:
     print(f"{'  its own plan, frozen':<26}{'':>10}{m['frozen_best_test']:>11.0f}"
           f"{vd['frozen']:>+12.0f}{v['frozen']:>+11.0f}")
 
-    # Paired across the same held-out windows. The interval that decides whether a difference
-    # is real is the ESS one: five eight-year windows one year apart are not five independent
-    # draws, and the naive column is printed beside it only to show by how much it lies.
+    # ESS interval is the one that counts.
     ess = summary["paired_test"]["fixed_vs_default"]["ess"]
     print(f"\n{'paired held-out differences':<30}{'mean':>10}{'se(ESS)':>10}{'se(naive)':>11}"
           f"{'95% CI (ESS)':>24}")

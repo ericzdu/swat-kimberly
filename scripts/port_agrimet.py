@@ -1,28 +1,6 @@
-"""Port the AgriMet TWFI station record — the site's own primary weather data.
+"""Port AgriMet TWFI daily weather (~/Documents/Kimberly, Idaho/weather.csv) into SWAT+ files.
 
-Source: ``~/Documents/Kimberly, Idaho/weather.csv``, a USBR Hydromet/AgriMet export for
-station **TWFI** (Twin Falls), daily, **1990-05-05 to 2026-07-16**.
-
-This replaces the two worst input compromises in the model at once:
-
-* **Relative humidity and wind speed were never measured inputs.** ``weather-sta.cli`` set
-  ``hmd = sim`` and ``wnd = sim``, so both were *generated* from a monthly climatology every
-  day — and both enter Penman-Monteith directly. AgriMet measures them (``TA``, ``UA``).
-* **Solar radiation was attributed to the wrong source and carried a hole.** ``port_solar.py``
-  claimed to read the ArcSWAT reference model's ``slr.slr`` gauge. It did not — its CSV is the
-  AgriMet ``SR`` column to three decimals, agreeing to 0.0005 MJ/m2 on all 3287 non-missing
-  days. It also wrote a hard **0.00000 MJ/m2 on 2019-04-30**, where AgriMet reads ``NO RECORD``
-  and the neighbouring days are ~25.4 — four days into that year's barley growth window. Solar
-  is now written here, from the same load and the same gap interpolation as everything else.
-* **Observed ET existed and was unused.** ``ETRS`` (alfalfa reference) and ``ETOS`` (grass
-  reference) are Kimberly-Penman reference ET; ``ET`` is the station's crop ET estimate.
-  These give the model a *measured* evapotranspiration target instead of scoring ET against
-  another model's simulation.
-
-It also carries 36 years of weather, against the 9 the model currently uses — the hard
-dependency Experiment 2 was blocked on.
-
-AgriMet parameter codes and the unit conversions applied here:
+Codes and conversions:
 
 ===== ============================== ==========================
 code  quantity                       conversion
@@ -39,27 +17,10 @@ ETOS  grass reference ET (in)        x 25.4 -> mm
 ET    crop ET (in)                   x 25.4 -> mm
 ===== ============================== ==========================
 
-``UA x 24 == WR`` (wind run, miles/day) in the raw file, which confirms the wind units.
+RH uses SWAT+/FAO-56 convention from dewpoint: RH = e_s(Tdew) / ((e_s(Tmax) + e_s(Tmin)) / 2).
 
-**Relative humidity has to be in SWAT+'s convention, not AgriMet's.** AgriMet's ``TA`` is mean
-daily RH, i.e. actual vapour pressure over saturation at *mean* air temperature. SWAT+ (like
-FAO-56) forms the vapour-pressure deficit against the **mean of saturation vapour pressure at
-Tmax and at Tmin**, which is larger because e_s is convex in temperature. Feeding ``TA``
-straight in therefore overstates humidity, understates VPD, and understates PET — measured, and
-still wrong. Ported directly it drove PET to 1125 mm/yr against a reference 1407 and a measured
-alfalfa-reference ET of ~1600.
-
-So RH is recomputed here from the **measured dewpoint** ``YM``::
-
-    RH = e_s(Tdew) / ( ( e_s(Tmax) + e_s(Tmin) ) / 2 )
-
-which is measured *and* in the engine's convention. July comes out at 0.384 by this definition
-against 0.474 for raw ``TA`` — and against 0.357 for the reference model's own generated value,
-which is the independent check that the convention is right.
-
-Writes ``tfcchmd.hmd`` / ``hmd.cli`` and ``tfccwnd.wnd`` / ``wnd.cli``, wires them into
-``weather-sta.cli`` and ``file.cio``, and extracts the observed ET series to
-``data/observed_et_agrimet.csv`` for :mod:`scripts.calib_report`.
+Writes hmd/wnd/slr weather files, wires weather-sta.cli and file.cio, and writes
+data/observed_et_agrimet.csv.
 
     uv run --with openpyxl python scripts/port_agrimet.py
 """
@@ -74,14 +35,7 @@ TIO = ROOT / "model" / "TxtInOut"
 AGRIMET = Path.home() / "Documents" / "Kimberly, Idaho" / "weather.csv"
 ET_CSV = ROOT / "data" / "observed_et_agrimet.csv"
 
-#: Years written to the weather files. **Not** the simulation window -- ``time.sim`` selects
-#: that, and it may select any sub-window of what is written here. Writing the long record is
-#: what unblocks Experiment 2: an episode samples an 8-year window out of these by rewriting
-#: ``time.sim`` alone, so stochastic weather costs no file rewriting at all.
-#:
-#: 1995 is the start because coverage is essentially complete from there (365/365 on all six
-#: required variables in most years, <=5 interpolated days in 1996-97). 1990-94 carry
-#: 20+ missing days a year and are left out rather than interpolated across.
+#: Years written (time.sim picks sub-windows). Pre-1995 has too many gaps.
 YEARS = range(1995, 2026)
 LAT, LON, ELEV = 42.550, -114.350, 1194.800
 
@@ -139,8 +93,7 @@ def load() -> pd.DataFrame:
         "etrs_mm": df["ETRS"] * 25.4,
         "etos_mm": df["ETOS"] * 25.4,
     })
-    # A handful of single-day gaps (<=4 per column over 9 years). Interpolate rather than
-    # drop: SWAT+ needs a complete daily series, and a -99 flag would bias the annual sums.
+    # Interpolate the few single-day gaps.
     gaps = out.isna().sum()
     if gaps.any():
         print("filling gaps by interpolation:",

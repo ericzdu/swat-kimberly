@@ -1,15 +1,6 @@
-"""Monthly growing-season Gymnasium environment (Stage 2).
+"""Monthly Gymnasium env: 42 steps (Apr-Sep x 7 yr); each step re-runs the rotation so far.
 
-One decision per growing-season month (Apr–Sep) × 7 years = 42 steps. Each step appends that
-month's irrigation (and optional mineral N), re-runs the full rotation with ops decided so
-far, and reads mid-season state from monthly ``hru_wb`` / ``hru_pw`` tables.
-
-**No future weather in the observation.** The policy sees soil water, cumulative stress, and
-recent precip/PET from months already simulated — a nowcast, not a forecast.
-
-**N cap is forward-only.** A remaining annual allowance is part of the observation and clips
-the current month's mineral application; past months are never rewritten (unlike prefix
-``repair`` on the whole plan).
+Obs has no future weather. N cap is forward-only (remaining allowance clips this month).
 """
 from __future__ import annotations
 
@@ -75,8 +66,7 @@ class MonthlySwatEnv:
         self.cum_profit = 0.0
         self.last = dict(sw=200.0, strsn=0.0, strsw=0.0, precip=20.0, pet=100.0,
                          remaining_n=float(self.max_n or MAX_N_LOADING))
-        # Year crop sequence is always DEFAULT_PLAN's measured rotation: since the 2026-09-09
-        # scope reduction the rotation is fixed, not a decision variable.
+        # Rotation is fixed to DEFAULT_PLAN's.
         self.crops = [decode_year(DEFAULT_PLAN[y]).crop for y in range(N_YEARS)]
         return self._obs(), {}
 
@@ -162,14 +152,7 @@ class MonthlySwatEnv:
         return self._obs(), reward, terminated, False, {"cum_profit": self.cum_profit, **d}
 
     def _decided_row(self, df):
-        """The monthly row for the month just decided — not the last row of the table.
-
-        Every step re-runs the *whole* rotation, so the table always ends at December of the
-        final simulated year. Taking ``iloc[-1]`` therefore returns the same future month at
-        every step, which both leaks past the decision point and leaves the hydrologic
-        channels constant within an episode. Select by (year, month) instead: ``nyskip``
-        discards the spin-up year, so printed year ``y`` is ``start_year + SPINUP + y``.
-        """
+        """Row for the month just decided, by (yr, mon). Not iloc[-1], which leaks the future."""
         if df is None or not len(df) or "yr" not in df.columns or "mon" not in df.columns:
             return None
         yr = self.start_year + SPINUP + self.year_idx

@@ -1,33 +1,8 @@
-"""The growers' own irrigation, distilled into a rule that can be run on any weather.
+"""Grower irrigation as the exp1_controller rule, fitted to logged 2013-2019 monthly depths.
 
-Why a rule and not the log
---------------------------
-The ``measured`` row (:func:`~swat_gym.experiments._focused.score_measured`) replays the logged
-2013-2019 schedule, unchanged, on every weather window. That is one fixed schedule on weather it
-was never a response to: the growers were watering *their* seasons, and a verbatim replay on
-someone else's strips out whatever responsiveness they had. Running the log on its own weather
-is not an option for a held-out comparison either — only one window (start 2012) lines up with
-it, and that window is the buffer between the train and test splits.
-
-This row asks instead: *if the growers' behaviour is a rule, what rule, and what does it earn
-elsewhere?* The rule is the feedback controller of :mod:`exp1_controller` — same three
-parameters, same monthly soil-water and precipitation state — so the grower row and the
-profit-optimised controller row differ **only in what (a, b, c) was fitted to**: the growers'
-monthly depths here, profit on the training windows there. It is never optimised for profit.
-
-The fit, and the one thing to disclose about it
------------------------------------------------
-Fitted on the logged window (start 2012: spin-up 2012, scored 2013-2019) to the 42 logged
-monthly totals, April-September, under the generated calendar every other arm uses. The loss is
-squared monthly error plus a penalty holding the rotation total within :data:`GATE_TOL` of the
-logged total — the rule 5 gate, applied to this row. October's 43 mm (2.2 % of the total) falls
-outside the monthly action space and cannot be matched in time; the total gate makes the rule
-put that water somewhere rather than lose it, exactly as the generated default does.
-
-**2013-2019 overlaps the test windows' calendar years.** Rule 7 forbids that for any arm that
-is *searched*; this row is not. It is fitted to behaviour, never scored against profit during
-the fit, and is reported as a reference row beside the replayed log — never as a learned arm.
-The artefact records the fit years so the disclosure travels with the numbers.
+Same (a, b, c) controller as the profit row, fitted to behaviour not profit. Loss = monthly
+SSE + rule 5 total-water gate. Fit years overlap test years; fine because it is a reference
+row, never searched on profit.
 
     uv run python -m swat_gym.experiments.exp1_grower_rule --evals 220
     uv run python -m swat_gym.experiments.exp1_grower_rule --from-fit runs/exp1_grower_rule.json \\
@@ -65,9 +40,7 @@ FIT_YEARS = list(range(FIT_START + 1, FIT_START + 1 + N_YEARS))
 #: Rule 5's tolerance on applied water, applied to the fitted rule on its own weather.
 GATE_TOL = 0.01
 
-#: Weight on the total-water penalty, per mm² of excess beyond :data:`GATE_TOL`. Large enough
-#: that the fit cannot trade the gate for monthly timing: a 10 mm excess costs 1e5 mm², against
-#: a monthly SSE on the order of 1e5 at a poor fit.
+#: Penalty per mm² beyond GATE_TOL; large enough that the gate always wins.
 TOTAL_PENALTY = 1e3
 
 #: Same start point as the controller's profit fit, so the two fits differ only in the target.
@@ -93,12 +66,7 @@ def logged_total_mm() -> float:
 
 
 def rendered_monthly_mm(month_mm: np.ndarray) -> np.ndarray:
-    """Decided monthly volumes -> the monthly totals the engine is actually handed.
-
-    Goes through :func:`~swat_gym.monthly.year_events`, the renderer every arm shares, so water
-    decided for a month after harvest is compared where it actually lands (carried back into
-    the season), not where it was asked for.
-    """
+    """Monthly volumes -> monthly totals as actually rendered by year_events."""
     month_mm = np.asarray(month_mm, dtype=float).reshape(N_YEARS, N_GROWING)
     out = np.zeros_like(month_mm)
     for y in range(N_YEARS):

@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""Generate markdown + PNG tables for PAPER.md / Google Docs.
+"""Generate markdown + PNG result tables from runs/*.json.
 
-Usage::
+    uv run python scripts/paper_tables.py [--out runs/paper_tables]
 
-    uv run python scripts/paper_tables.py
-    uv run python scripts/paper_tables.py --out runs/paper_tables
-
-Writes ``table_*.md``, ``all_tables.md``, and ``table_*.png``.
-PPO / frozen rows stay as em-dashes until ``runs/exp1_irrigation.json`` exists.
+PPO/frozen rows are em-dashes until runs/exp1_irrigation.json exists.
 """
 from __future__ import annotations
 
@@ -47,13 +43,7 @@ def _fmt(x: float | None, digits: int = 0) -> str:
 
 
 def _paired(p: dict) -> str:
-    """``mean ± se`` where the s.e. is the ESS one — the only one rule 7 permits in the paper.
-
-    Held-out windows overlap by up to seven of their eight years, so ``se_naive`` (kept in the
-    artefact for comparison) claims about twice the precision the split bought. Reading
-    ``p["se"]`` raises ``KeyError`` on purpose: any artefact still carrying that key predates
-    the fix and its intervals must not be published.
-    """
+    """mean ± se_ess (rule 7)."""
     return f"{p['mean']:+,.0f} ± {p['se_ess']:,.0f}"
 
 

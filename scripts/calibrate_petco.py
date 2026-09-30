@@ -1,24 +1,7 @@
-"""Calibrate ``hydrology.hyd:pet_co`` against measured AgriMet reference ET.
+"""Fit hydrology.hyd pet_co to measured AgriMet ETos (grass reference).
 
-``pet_co`` arrived as a **provisional drainage restore**: under SWAT+ rev 62 the model's deep
-percolation collapsed to ~0, taking ``no3_rchg`` with it, and scaling PET down to 0.81 bought
-back ~33 mm/yr. That is fitting a PET parameter to a percolation symptom, which leaves the
-manuscript carrying an unexplained 19 % haircut on potential evapotranspiration.
-
-There is a measurement for this parameter. ``data/observed_et_agrimet.csv`` carries daily
-reference ET from the AgriMet TWFI station (see ``port_agrimet.py``). The ``etos`` column is
-**grass**-reference ET, which is the definition SWAT+'s Penman-Monteith PET matches; ``etrs``
-is alfalfa-reference and runs ~35 % higher, so calibrating against it would be a definitional
-error rather than a model result.
-
-``pet_co`` multiplies computed PET, so PET is linear in it and one run fixes the optimum:
-
-    pet_co* = pet_co_run * sum(observed ETos) / sum(simulated PET)
-
-The sweep exists to confirm that linearity holds through the engine and, more importantly, to
-show what the PET-matched value costs on the quantities ``0.81`` was protecting — deep
-percolation, nitrate recharge and yield. Those are reported alongside, never folded into the
-objective.
+PET is linear in pet_co: pet_co* = pet_co_run * sum(ETos) / sum(PET). Percolation, NO3 and
+yield are reported alongside, not fitted.
 
     uv run python scripts/calibrate_petco.py
     uv run python scripts/calibrate_petco.py --values 0.85 0.90 0.95 1.00 --apply
@@ -42,18 +25,12 @@ from calib_report import collect, pbias  # noqa: E402
 
 FILE, ROW, COLUMN = "hydrology.hyd", "hyd1", "pet_co"
 
-#: Swept by default. Brackets the measurement-implied optimum from below (the incumbent 0.81)
-#: and above (the model-native 1.0), so the cost of moving is visible in both directions.
+#: Default sweep values.
 DEFAULT_VALUES = (0.81, 0.90, 0.95, 1.00)
 
 
 def score(df: pd.DataFrame) -> dict[str, float]:
-    """The one calibration target, plus everything it trades against.
-
-    ``pet`` is the objective -- PET against measured grass-reference ETos. The rest are
-    reported so the trade is legible: ``perc`` and ``no3`` are what 0.81 was bought for, and
-    the yield columns are what the whole model is for.
-    """
+    """PET vs ETos (objective) plus perc, NO3 and yield (reported)."""
     meas = df[df["yld_meas"].notna()]
     per_crop = {c: pbias(g["yld"], g["yld_meas"]) for c, g in meas.groupby("crop")}
     return {

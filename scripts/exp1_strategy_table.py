@@ -203,12 +203,10 @@ def main() -> None:
         raise SystemExit("exp1_grower_rule.json failed its rule 5 gate; refit before tabulating")
 
     if args.skip_openloop:
-        # The cached numbers that used to live here were produced under the nitrogen-cap
-        # confound (open-loop arms capped at 400 kg N/ha, policy arm uncapped) and are wrong
-        # by up to 1,600 $/ha. Rather than ship a stale cache, refuse.
+        # Old cache was produced under the N-cap confound; refuse.
         raise SystemExit(
-            "--skip-openloop is disabled: its cached rows predate the max_n fix "
-            "(see runs/archive/capped_20260806/README.md). Re-score from scratch.")
+            "--skip-openloop is disabled: its cached rows predate the max_n fix. "
+            "Re-score from scratch.")
     else:
         print("=== measured ===", flush=True)
         measured = score_measured(test, prices, no3_price)
@@ -223,8 +221,7 @@ def main() -> None:
 
     print(f"=== PPO seed {rep} ===", flush=True)
     model = PPO.load(str(RUNS / f"exp1_irrigation_ppo_s{rep}.zip"))
-    # Load the observation filter the policy was trained with, or refuse: scoring a normalised
-    # policy on raw observations produces plausible numbers for a different objective.
+    # Policy must be scored with its training obs normaliser.
     nrm = RUNS / f"exp1_irrigation_ppo_s{rep}_obsnorm.npz"
     obsnorm = ObsNorm.load(nrm) if nrm.is_file() else None
     if obsnorm is None and NORMALISE_OBS:

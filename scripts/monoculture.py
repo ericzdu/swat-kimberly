@@ -1,32 +1,8 @@
 #!/usr/bin/env python3
-"""Continuous monoculture runs — one crop, every year, for all seven site crops.
+"""Continuous monoculture per crop (7 site crops) to compare strsn/strsw under uniform
+management: unlimited auto-irrigation, fixed N at planting, workbook dates.
 
-Purpose: read each crop's **nutrient and water stress** (`hru_pw_day.strsn`, `strsw`) under a
-common management, so the crops can be compared without the rotation confounding them.
-
-Management is deliberately uniform across crops so the *crop* is the only thing that varies:
-
-* **Water is not limiting.** Auto-irrigation via the shipped `irr_str9_unlim` decision table —
-  irrigate when plant water stress drops below 0.9, unlimited source. So `strsw` should stay
-  near zero and `strsn` carries the signal.
-* **Nitrogen is fixed**, `--n-rate` kg N/ha (default 200) as elemental N broadcast at planting.
-  One rate across seven crops is agronomically blunt on purpose: it is the *same* rate, so the
-  differences in `strsn` are crop nitrogen demand, not a management difference.
-* Planting and harvest dates are the site workbook's (`Plant Harvest Dates` sheet), not guesses.
-
-Two things this run is *not*:
-
-1. **Not calibrated for four of the seven.** `port_crops.py` only maps CSIL/BARL/ALFA. Potato,
-   pinto beans, winter wheat and sugarbeet get the workbook's parameters written here, but they
-   have never been refit against a measured yield at this site the way corn/barl/alfa were, and
-   corn's `bm_e` in particular absorbs a resident-perennial artefact. Cross-crop yield rankings
-   are therefore **not** a site result.
-2. **Not the calibrated rotation.** `plant.ini` is rewritten to a single-plant community, which
-   deliberately removes the resident-alfalfa PAR/water draw that the three-plant `kimb_comm`
-   imposes on every year. That is the right choice for a monoculture but means these runs are
-   not comparable to Exp 1-4 numbers.
-
-`model/TxtInOut` is never touched: every run is built in its own copy.
+Only corn/barl/alfa are site-calibrated; not comparable to rotation results. Runs in copies.
 
     uv run python scripts/monoculture.py                      # all 7, 18 yr, 200 kg N/ha
     uv run python scripts/monoculture.py --crops corn alfa    # subset
@@ -50,8 +26,7 @@ from swat_kimberly.runner import KimberlySwat  # noqa: E402
 TIO = ROOT / "model" / "TxtInOut"
 CROP_CSV = ROOT / "data" / "crop_params_swat.csv"
 
-#: workbook crop -> (plants.plt name, emerge (mon,day), harvest dates [(mon,day), ...])
-#: Dates are the `Plant Harvest Dates` sheet. Alfalfa is perennial with four cuttings.
+#: workbook crop -> (plants.plt name, emerge (mon,day), harvest dates). Alfalfa: four cuts.
 CROPS: dict[str, tuple[str, tuple[int, int], list[tuple[int, int]]]] = {
     "ALFA": ("alfa", (3, 1), [(6, 15), (7, 30), (8, 30), (10, 15)]),
     "BARL": ("barl", (4, 15), [(8, 10)]),
@@ -62,19 +37,13 @@ CROPS: dict[str, tuple[str, tuple[int, int], list[tuple[int, int]]]] = {
     "SGBT": ("sgbt", (5, 1), [(10, 5)]),
 }
 
-#: Already ported and then refit by calibrate/optimize.py — do NOT overwrite these from the
-#: workbook, that would silently reset the calibration to book values.
+#: Already in plants.plt; don't overwrite from the workbook.
 ALREADY_CALIBRATED = {"corn", "barl", "alfa"}
 
-#: plants.plt name -> harv.ops entry. This is not cosmetic: the generic `grain` entry carries
-#: `harv_idx = 0.0`, so using it harvests almost nothing and the run reports ~0.03 t/ha.
-#: Only the three site crops have a *fitted* op. The other four get one built from the workbook
-#: by `write_harvest_op`, so nothing here is invented — the workbook is the calibration source.
+#: Site harvest ops (generic `grain` has harv_idx 0). Others built by write_harvest_op.
 HARVEST = {"corn": "gn_corn", "barl": "gn_barl", "alfa": "gn_alfa"}
 
-#: SWAT IDC -> harv.ops `harv_typ`. 1/2 annual legume, 3 perennial legume, 4 warm annual,
-#: 5 cool annual, 6 perennial. Crops whose workbook HI_OVR exceeds 1 are root/tuber crops, whose
-#: harvest index is expressed on a fresh-tuber basis; those take `tuber` regardless of IDC.
+#: SWAT IDC -> harv_typ. HI_OVR > 1 means tuber regardless.
 IDC_TYP = {1: "grain", 2: "grain", 3: "biomass", 4: "grain", 5: "grain", 6: "biomass"}
 
 #: plants.plt token index -> workbook column, mirroring port_crops.COLMAP.
@@ -101,10 +70,7 @@ def patch_plants(workdir: Path, plt_name: str) -> str | None:
         toks = line.split()
         if not toks or toks[0] != plt_name:
             continue
-        # COLMAP keys are 0-based token indices into the split line, exactly as
-        # port_crops.py uses them. Indexing at `idx - 1` shifts every parameter one column
-        # left -- BIO_E into days_mat, BLAI into harv_idx -- and the run still completes,
-        # reporting plausible-looking nonsense. Verified against the header: toks[5] is bm_e.
+        # COLMAP keys are 0-based token indices (toks[5] is bm_e).
         for idx, col in COLMAP.items():
             toks[idx] = f"{float(row[col]):.5f}"
         # Rebuild in plants.plt's fixed width, preserving any trailing description.
@@ -126,16 +92,7 @@ def _is_float(s: str) -> bool:
 
 
 def write_harvest_op(workdir: Path, plt_name: str) -> str:
-    """Build this crop's `harv.ops` entry from the workbook. Returns the op name.
-
-    The workbook already carries the calibration, so nothing is fitted here:
-
-    * ``harv_idx`` <- ``HARV_EFF``. This is the established convention on this model, not a
-      guess — the three site ops record their own provenance as ``fitted_from_REF_0.98`` /
-      ``_0.54`` / ``_0.95``, which are exactly CSIL/BARL/ALFA ``HARV_EFF``.
-    * ``harv_typ`` <- ``IDC``, except that ``HI_OVR > 1`` marks a root/tuber crop.
-    * ``harv_eff`` = 1.0, matching the site ops (efficiency is carried in the index).
-    """
+    """Build harv.ops entry from workbook (harv_idx=HARV_EFF, typ from IDC, eff=1). Returns name."""
     if plt_name in HARVEST:
         return HARVEST[plt_name]
     code = next(k for k, v in CROPS.items() if v[0] == plt_name)
@@ -190,9 +147,7 @@ def write_management(workdir: Path, plt_name: str, spec, years: int, n_rate: flo
         body.append(f"{'':48s}{typ:<14s}{mon:>4d}{day:>10d}{0.0:>14.5f}"
                     f"{d1:>18s}{d2:>18s}{d3:>14.5f}  ")
 
-    # The auto block is read *before* the scheduled ops, not after — `read_mgtops.f90` consumes
-    # `numb_auto` decision-table names immediately after the schedule header. Putting them at the
-    # end fails with a bare "End of file" that says nothing about the real cause.
+    # Auto decision-table names must come right after the schedule header.
     (workdir / "management.sch").write_text(
         "management.sch: written by scripts/monoculture.py\n"
         "name                                       numb_ops  numb_auto            op_typ"

@@ -1,12 +1,4 @@
-"""Monthly growing-season irrigation schedules.
-
-Growing season is April–September (months 4–9): six decisions per year × seven years = 42
-open-loop parameters for the irrigation arm. The annual ``(start, interval, depth)`` schedule
-**nests** inside this space: :func:`annual_to_monthly` converts a fixed-interval year into six
-monthly totals so ``DEFAULT_PLAN`` still reproduces the measured 3,938.8 mm baseline.
-
-Open-loop only in Stage 1 — the gym lives in :mod:`swat_gym.env` once the ceiling gate passes.
-"""
+"""Monthly Apr-Sep irrigation (6 x 7 = 42 params). The annual default nests via annual_to_monthly."""
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -26,28 +18,11 @@ N_GROWING = len(GROWING_MONTHS)
 #: Open-loop irrigation dimensionality: one depth per growing month per year.
 MONTHLY_I_DIM = N_YEARS * N_GROWING  # 42
 
-#: Max mm applied in one month. Generous enough that the annual default (~33 mm × ~3–5
-#: events/month) nests inside without clipping.
+#: Max mm per month.
 MONTH_DEPTH_MAX = 200.0
 
-#: Largest single application, mm. From ``irr.ops``' own ``sprinkler_high`` preset — the
-#: engine's notion of a big sprinkler pass. ``sprinkler_med`` is 9.1 mm and ``drip`` 25 mm.
-#:
-#: **Why a month's water is delivered in passes rather than one event.** Every row of
-#: ``irr.ops`` sets ``sumq_frac = 0``, so applied irrigation is routed entirely into the soil
-#: with none shed as surface runoff. That is sound at realistic application depths and false at
-#: large ones: holding annual depth fixed at 562.7 mm and varying only event size, runoff stays
-#: flat at 2.26–2.46 mm/yr across a 17-fold range (10.8 → 187.6 mm), while percolation climbs
-#: 0.00 → 54.25 and leaching 0.00 → 143.90 kg N/ha. A single 188 mm application infiltrates
-#: whole because the model has no infiltration-rate limit on irrigation.
-#:
-#: Rendering one month as one event therefore *manufactured* the leaching that Exp 1's arms
-#: then differed in — the column ranked action-space coarseness, not management. Splitting the
-#: same volume into ≤40 mm passes leaves applied water identical and takes leaching to exactly
-#: zero (`scripts/event_size_check.py`).
-#:
-#: The site needs ~563 mm/yr, which is ~24 passes at this cap — against measured practice's
-#: 22.6/yr. Six monthly events was never close to how the field is actually watered.
+#: Max mm per pass. Large single events infiltrate whole in SWAT+ and fake leaching, so
+#: monthly volumes are split into passes (scripts/event_size_check.py).
 MAX_EVENT_MM = 40.0
 
 
@@ -57,10 +32,7 @@ def _days_in_month(mon: int) -> int:
 
 def _spread(volume: float, first: int, last: int,
             max_event: float) -> tuple[list[tuple[int, float]], float]:
-    """Place ``volume`` as equal passes on distinct days in ``[first, last]``.
-
-    Returns the passes and whatever volume would not fit under ``max_event``.
-    """
+    """Equal passes on distinct days in [first, last]; returns (passes, leftover volume)."""
     usable = last - first + 1
     if volume <= 0 or usable <= 0:
         return [], max(0.0, volume)
@@ -75,10 +47,7 @@ def _spread(volume: float, first: int, last: int,
 
 def annual_to_monthly(irr_start_doy: int, irr_interval: int, irr_depth: float,
                       crop: str) -> tuple[float, ...]:
-    """Collapse a fixed-interval year into six monthly totals (mm).
-
-    Events after harvest / final cut are dropped, matching :func:`schedule._year_ops`.
-    """
+    """Fixed-interval year -> six monthly mm totals (post-harvest events dropped)."""
     depths = [0.0] * N_GROWING
     if irr_depth <= 0 or irr_interval <= 0:
         return tuple(depths)
@@ -94,11 +63,7 @@ def annual_to_monthly(irr_start_doy: int, irr_interval: int, irr_depth: float,
 
 
 def default_monthly_irr() -> np.ndarray:
-    """``DEFAULT_PLAN`` irrigation expressed as monthly depths, shape ``(N_YEARS, N_GROWING)``.
-
-    Nesting: scoring this vector through :func:`evaluate_monthly_i` must match the annual
-    default's applied depth to within 1 %.
-    """
+    """DEFAULT_PLAN irrigation as monthly mm, shape (N_YEARS, N_GROWING). Must nest within 1 %."""
     out = np.zeros((N_YEARS, N_GROWING), dtype=float)
     for y in range(N_YEARS):
         a = decode_year(DEFAULT_PLAN[y])
@@ -119,22 +84,10 @@ def decode_monthly_depths(flat: Sequence[float]) -> np.ndarray:
 
 def year_events(month_mm_year, crop: str,
                 max_event: float = MAX_EVENT_MM) -> tuple[tuple[int, float], ...]:
-    """One year's six monthly volumes as day-level passes of at most ``max_event``.
+    """Six monthly volumes -> day passes <= max_event. Used by open-loop and policy paths.
 
-    Shared by the open-loop and policy paths — objective parity depends on both calling this.
-
-    **This transform must stay deterministic and policy-agnostic.** Placing passes by soil
-    water — irrigating when the profile is dry — would make the *renderer* a closed-loop
-    controller, and every arm, including the fixed open-loop schedules, would silently inherit
-    adaptation from it. The comparison between searched schedules and learned policies would
-    then be meaningless, and invisibly so, because the behaviour lives in the plan builder
-    rather than in the reward. Responsive timing belongs in an action space where an arm is
-    credited for it (see :mod:`swat_gym.experiments.exp1_controller`).
-
-    Water that falls after harvest, or that a month cannot absorb at a physical rate, is
-    carried back onto earlier days with spare capacity rather than dropped — dropping it loses
-    4.7 % of the measured depth and breaks the nesting gate — and never stacked onto one day,
-    which would recreate the very over-application this rendering exists to prevent.
+    Must stay deterministic and state-independent (else the renderer adds adaptivity).
+    Overflow is carried to earlier days, never dropped or stacked.
     """
     cal = CALENDAR[crop]
     end = _doy(*cal["cuts"][-1]) if crop == "alfa" else _doy(*cal["harvest"])
@@ -164,11 +117,7 @@ def year_events(month_mm_year, crop: str,
 def plan_from_monthly_i(month_mm: np.ndarray, *, constrain: bool = True,
                         max_n: float | None = MAX_N_LOADING,
                         max_event: float = MAX_EVENT_MM) -> list[YearAction]:
-    """Build a full rotation plan with monthly irrigation; other levers at ``DEFAULT_PLAN``.
-
-    Monthly volumes are rendered as ≤``max_event`` passes (see :data:`MAX_EVENT_MM`), so the
-    action stays a monthly *volume* while the simulation sees physically sized applications.
-    """
+    """Full plan with monthly irrigation (rendered as passes); other levers at DEFAULT_PLAN."""
     month_mm = np.asarray(month_mm, dtype=float).reshape(N_YEARS, N_GROWING)
     plan: list[YearAction] = []
     for y in range(N_YEARS):

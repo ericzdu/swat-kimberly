@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
-"""Do the repo's derived data files still match the collaborator's primary workbooks?
-
-Every measured number this project scores against lives twice: once in a workbook under
-``~/Documents/Kimberly, Idaho`` that the collaborator maintains, and once in a CSV or a Python
-constant in this repo that somebody transcribed from it. ``check_param_state.py`` guards the
-boundary between the *workbook* and the *model*; nothing guarded the boundary between the
-**workbook and the transcription**, so a re-issued workbook — or a transcription error made once —
-would be invisible forever. This closes that.
+"""Check repo data files still match the collaborator's source workbooks. Exits non-zero on drift;
+skips if the source dir is absent.
 
     uv run python scripts/check_source_data.py
     SOURCE_DIR="/path/to/Kimberly, Idaho" uv run python scripts/check_source_data.py
-
-Exits non-zero if any derived value has drifted from its source. The source directory is not in
-the repository (it is the collaborator's data, not ours to vendor), so this SKIPS rather than
-fails when the directory is absent — a missing source is not the same as a mismatched one.
 """
 from __future__ import annotations
 
@@ -33,15 +23,10 @@ SOURCE = Path(os.environ.get("SOURCE_DIR", Path.home() / "Documents" / "Kimberly
 GRACENET_DIR = SOURCE / "USDA GRACEnet"
 TOL = 1e-3
 
-#: Measured applied irrigation over the seven rotation years, mm. CLAUDE.md hard rule 5 gates
-#: the generated baseline against this to 1 %, so it is the single most load-bearing measured
-#: constant in the repository.
+#: Measured rotation irrigation, mm (rule 5 gate).
 IRRIGATION_TOTAL = 3938.8
 
-#: Per-year irrigation, and where each year's column lives. The three workbooks were produced
-#: by different people in different years and share no layout: 2013-15 is one sheet per crop
-#: year with a "Irrigation (mm)" column, 2016 is an irrigation-scheduler export with a banner
-#: above the header, and 2017-19 carries inches and mm side by side.
+#: Per-year irrigation source locations (workbook layouts differ).
 IRRIGATION_SHEETS = [
     ("GRACEnet Irrigation 2013-2015.xlsx", "2013 Corn",     2013, 3, 1),
     ("GRACEnet Irrigation 2013-2015.xlsx", "2014 Barley",   2014, 3, 1),
@@ -52,15 +37,7 @@ IRRIGATION_SHEETS = [
     ("GRACEnet Irrigation 2017-2019.xlsx", "2019 Barley",   2019, 5, 1),
 ]
 
-#: Years where the repo **deliberately** departs from the sheet above, with the divergence
-#: pinned exactly. Skipping these would hide a real change on either side; asserting the gap
-#: means the check still fires if the workbook is re-issued or the extraction is re-run.
-#:
-#: 2019: the ``2019 Barley`` sheet carries the *reference model's* depths, rounded to whole
-#: inches (1.00 in / 1.25 in). The extraction that ``management.sch`` actually applies comes
-#: from the pivot-controller export and is unrounded (0.96 in / 1.25 in). PROVENANCE §1a item 4
-#: and rule 11 both name it: where the reference and the primary measurement disagree, the
-#: measurement wins. Corrected 2026-07-31; the repo is right and this sheet is not the source.
+#: Deliberate, pinned divergences. 2019 uses the controller export, not the rounded sheet.
 EXPECTED_DIVERGENCE = {
     2019: (502.412, 520.700, "sheet is the reference's whole-inch rounding; "
                              "repo is the pivot-controller export (PROVENANCE §1a.4, rule 11)"),
@@ -118,12 +95,7 @@ def check_irrigation() -> None:
 
 
 def check_crop_params() -> None:
-    """``data/crop_params_swat.csv`` against the workbook's *calibrated* block.
-
-    The workbook holds two blocks — the site's calibrated values on top and a DEFAULT block
-    below — and only the first is ours. Rule 11b's whole ownership claim rests on this file
-    being a faithful copy of that block, and until now nothing checked that it was.
-    """
+    """data/crop_params_swat.csv vs the workbook's top (calibrated) block."""
     book = pd.read_excel(SOURCE / "Crop Parameters and Plant Harvest dates.xlsx",
                          sheet_name="SWAT Crop Parameters", header=0)
     book = book[book["CPNM"].notna()]
@@ -171,11 +143,7 @@ def check_bulk_density() -> None:
 
 
 def check_soil_nitrate() -> None:
-    """``data/soil_no3_gracenet.csv`` against the ``Soil N & P`` April profile.
-
-    The CSV is a depth-weighted plot mean, so this recomputes it from the raw 4 plots x 5 depths
-    rather than comparing a stored aggregate to itself.
-    """
+    """data/soil_no3_gracenet.csv recomputed from raw plots x depths."""
     raw = pd.read_excel(GRACENET_DIR / "GraceNet Soil and Nutrient Properties.xlsx",
                         sheet_name="Soil N & P", header=0)
     raw = raw[raw["NO3-N mg/kg"].notna()].copy()

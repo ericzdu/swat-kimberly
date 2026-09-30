@@ -1,11 +1,4 @@
-"""Tests for the CMA-ES driver, on cheap analytic objectives rather than the engine.
-
-The property that matters is the one a killed run depends on: a resumed search must be the
-search it would have been. Exp 1's fixed row was produced by a warm start that restored only
-the incumbent point, so it carried a caveat that it was not equivalent to an uninterrupted
-6,250-evaluation search. Restoring the strategy object removes the caveat — but only if it
-actually holds, which is what this pins.
-"""
+"""CMA-ES driver tests on analytic objectives; resume must equal an uninterrupted run."""
 from __future__ import annotations
 
 import numpy as np

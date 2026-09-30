@@ -1,9 +1,4 @@
-"""Tests for the shared five-row experiment machinery.
-
-Two properties, both of which a silent break would turn into a misreported headline: that a
-stored row carries enough to be re-priced without the engine, and that a reported difference
-comes with the dispersion needed to read it.
-"""
+"""Tests for _focused: re-priceable rows and paired dispersion."""
 from __future__ import annotations
 
 import argparse
@@ -68,11 +63,7 @@ def test_paired_reports_finite_error_for_a_single_window():
 # -- rule 7: overlapping windows are not independent draws ---------------------------------
 
 def test_paired_has_no_naive_se_under_the_reportable_name():
-    """``se`` is deliberately absent, so a stale consumer fails loudly instead of publishing.
-
-    The five held-out windows share up to seven of their eight calendar years. ``sd/sqrt(5)``
-    is the number rule 7 forbids; it survives as ``se_naive`` only so the ratio can be shown.
-    """
+    """paired() has no ``se`` key (rule 7)."""
     rows_a = [{"profit": p, "start_year": sy}
               for p, sy in zip((100.0, 400.0, 250.0, 900.0, 600.0), TEST_YEARS)]
     rows_b = [{"profit": 0.0, "start_year": sy} for sy in TEST_YEARS]
@@ -115,13 +106,7 @@ def test_paired_bootstrap_is_deterministic():
 # -- rule 2: the nitrogen cap can never be applied silently ---------------------------------
 
 def test_max_n_has_no_default_and_must_be_passed():
-    """``run()`` refuses to start without ``--max-n``.
-
-    The cap binds on ``DEFAULT_PLAN`` itself (569 and 936 kg N/ha clipped to 400), so a capped
-    run and an uncapped one are different worlds, not stricter and looser versions of one. A
-    default let Exp 3 and Exp 4 inherit 400 while Exp 1 ran uncapped, and composing across that
-    line is the same class of error as the cap bug that inverted Exp 1's headline.
-    """
+    """run() requires --max-n (rule 2)."""
     with pytest.raises(SystemExit):
         run("N", Path("/tmp/never_written.json"), ["--budget", "10"])
 
@@ -147,9 +132,7 @@ def test_the_cap_actually_binds_on_the_baseline():
 # -- the CMA-ES search starts from measured practice, always ---------------------------------
 
 def test_optimize_fixed_starts_from_the_arm_default():
-    """With Exp 4 cut (2026-09-09) there is no warm start: every search begins at measured
-    practice on the arm's own dimensions. This pins that the start point is not silently
-    something else — the failure the old warm-start test guarded, in its surviving form."""
+    """CMA-ES starts at default_free(arm)."""
     seen = []
 
     def fake_minimise(fn, x0, **kw):

@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
-"""Re-derive every number the 2026-09-10 refit is reported on, from the model as it sits on disk.
-
-This exists so that the refit's claims can be **checked rather than trusted**. Everything below is
-computed from ``model/TxtInOut`` at the moment of the run; nothing is read back from an artefact,
-so a stale ``runs/*.json`` cannot make this agree with a report that has drifted from the model.
+"""Re-derive the refit's reported numbers from model/TxtInOut (no artefacts read).
 
     uv run python scripts/verify_model_state.py
     uv run python scripts/verify_model_state.py --sweeps   # adds the identifiability evidence
 
-The plain run is fast (a handful of engine runs). ``--sweeps`` re-measures the four parameters
-removed from the free set and takes a couple of minutes.
 """
 from __future__ import annotations
 
@@ -29,8 +23,7 @@ from calib_report import GRACENET, collect  # noqa: E402
 from calibrate.optimize import PARAMS, terms, score  # noqa: E402
 from n_trajectory import trajectory  # noqa: E402
 
-#: Every parameter the refit touched, with the provenance that decides its value. ``source`` is
-#: what the value must be; ``None`` means "fitted, no source, reported not asserted".
+#: Refit params; source None = fitted (reported, not asserted).
 OWNERSHIP = [
     # file,             row,        column,      expected, provenance
     ("plants.plt",      "alfa",     "lai_min",   1.75,     "sourced; inert under rev 62 (PARAMS-excluded)"),
@@ -104,10 +97,7 @@ def sweeps(runner: FastRunner) -> None:
     disk = read_defaults(TXTINOUT, PARAMS)
 
     def at(file: str, row: str, col: str, values: list[float]) -> None:
-        # The swept column must be handed to ``terms`` as a Param, not pre-edited into
-        # ``sources``: ``params.apply`` returns only the files PARAMS touches, so an edit to a
-        # file no longer in the free set is silently dropped and every row comes back identical.
-        # That is precisely the failure this script exists to catch, so it must not commit it.
+        # Pass as a Param; pre-editing sources would be silently dropped by params.apply.
         knob = Param(file, row, col, min(values), max(values))
         print(f"\n  {file}:{row + '.' if row else ''}{col}")
         print(f"    {'value':>10}{'SCORE':>9}{'yld_rms':>9}{'corn':>8}{'alfa':>8}{'barl':>8}{'perc':>8}")

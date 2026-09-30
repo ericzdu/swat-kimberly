@@ -70,8 +70,7 @@ def test_obs_has_no_future_weather_keys():
     from swat_gym.monthly_env import MonthlySwatEnv, OBS_DIM_MONTHLY
     # Construction without a runner still exposes obs shape.
     assert OBS_DIM_MONTHLY == 13
-    # Documented channels: past/current state only — no 'forecast' field.
-    # Smoke the obs vector length via a dry reset with a real runner if available.
+    # No forecast channel; check obs length.
     try:
         with MonthlySwatEnv(stochastic_weather=False, arm="I") as env:
             obs, _ = env.reset(start_year=2013)
@@ -85,15 +84,7 @@ def test_obs_has_no_future_weather_keys():
 
 @pytest.mark.slow
 def test_openloop_and_policy_paths_agree_on_identical_plan():
-    """The two scoring paths must be the same objective.
-
-    Regression for a bug that inverted Exp 1's headline: ``evaluate_monthly_i`` defaulted to
-    ``max_n=MAX_N_LOADING`` (400 kg N/ha), so every open-loop row — including the CMA-ES
-    *objective* — was scored under a nitrogen cap while :class:`MonthlySwatEnv` ran with
-    ``repair(max_n=None)``. Measured manure is 569 and 936 kg N/ha in 2013/2014, so the cap
-    bound hard: it cost the open-loop row 1,372 $/ha on test and turned a true ``policy −
-    fixed`` of −995 into a reported +377.
-    """
+    """Open-loop and policy paths score the same objective (max_n parity, rule 2)."""
     from swat_gym.monthly_env import MonthlySwatEnv
 
     mm = default_monthly_irr()
@@ -144,14 +135,7 @@ MEASURED_MANURE_N = 2090.06     # ...at each year's own MANURE_N_FRAC
 
 
 def test_default_plan_nests_measured_nitrogen():
-    """Nitrogen nesting gate, the analogue of the irrigation one.
-
-    `DEFAULT_PLAN` is the baseline every generated arm inherits its nitrogen from, so it must
-    reproduce measured practice in N as well as in water. A uniform 45 Mg/ha of `gn2013`
-    delivered 2,340 kg N against the measured 2,090 — +12 % that the field never received —
-    and made every "vs measured" comparison a nitrogen contrast as much as an irrigation one.
-    The irrigation gate could not catch it because it only ever weighed water.
-    """
+    """DEFAULT_PLAN reproduces measured N (2,090 kg/ha)."""
     from swat_gym.constrainers import MANURE_N_FRAC
     from swat_gym.env import DEFAULT_PLAN, decode_year
 
@@ -179,12 +163,7 @@ def test_alfalfa_years_receive_no_manure():
 
 @pytest.mark.slow
 def test_generated_arms_are_nitrogen_matched_to_measured():
-    """Every generated arm must apply the *same* nitrogen as measured practice.
-
-    Exp 1 frees irrigation only, so nitrogen is a held constant. If a generated arm and the
-    measured baseline differ in applied N, the arm's reported gain is partly a nitrogen effect
-    and the experiment is not the irrigation contrast it claims to be.
-    """
+    """Generated arms apply the same N as measured practice."""
     from swat_gym.env import time_sim
     from swat_gym.rewarders import average
 
@@ -204,14 +183,7 @@ def test_generated_arms_are_nitrogen_matched_to_measured():
 
 
 def test_no_application_exceeds_the_physical_cap():
-    """No single irrigation event may exceed ``MAX_EVENT_MM``.
-
-    `irr.ops` sets ``sumq_frac = 0`` on every row, so applied water infiltrates whole with
-    none shed as runoff — sound at realistic depths, false at large ones. Holding annual depth
-    fixed and varying only event size, runoff stays flat at 2.26-2.46 mm/yr across a 17x range
-    while percolation goes 0.00 -> 54.25 and leaching 0.00 -> 143.90 kg N/ha. Rendering a whole
-    month as one event therefore manufactures the leaching the arms then differ in.
-    """
+    """No irrigation event exceeds MAX_EVENT_MM."""
     from swat_gym.monthly import MAX_EVENT_MM, plan_from_monthly_i
 
     # Worst case: every month at the ceiling.
@@ -240,15 +212,7 @@ def test_event_splitting_preserves_applied_depth():
     assert err < 0.01, f"{d['irrigation_mm']} vs {measured} ({err:.2%}) — splitting lost water"
 
 
-# -- the observation actually closes the loop ---------------------------------------------
-#
-# Every step re-runs all eight years, so the monthly tables always END at December of the
-# final year. ``_read_state`` used to take ``iloc[-1]``, which returned that same future row
-# at every step: channels 5-9 were frozen at (sw=16.609, precip=9.144, pet=16.414) for the
-# whole episode, and the only inputs that moved were deterministic functions of ``t``. The
-# policy was structurally open-loop, so "PPO ~= frozen plan" was guaranteed by the wiring
-# rather than measured — which is the paper's central claim. The three tests below pin the
-# row selection, the variation it produces, and the causality premise §3.1.1 rests on.
+# Obs must read the decided month's row (not iloc[-1]) and vary within an episode.
 
 def _decided_month(step_count: int, start_year: int = 2013) -> tuple[int, int]:
     """(calendar year, month) the ``step_count``-th step decided. ``nyskip`` drops spin-up."""
@@ -260,8 +224,7 @@ def test_observation_reads_the_decided_month_not_the_last_row():
     """Each channel must come from the month just decided, selected by (yr, mon)."""
     from swat_gym.monthly_env import MonthlySwatEnv
 
-    # Collect inside the try, assert outside it: a bare ``except Exception`` around the
-    # assertions would turn a genuine failure of this test into a skip.
+    # Assert outside the try so failures aren't turned into skips.
     seen = []
     try:
         with MonthlySwatEnv(stochastic_weather=False, arm="I", max_n=None) as env:
@@ -315,12 +278,7 @@ def test_hydrologic_channels_vary_within_an_episode():
 
 
 def test_undecided_tail_cannot_change_earlier_observations():
-    """The premise §3.1.1's equivalence argument rests on: SWAT+ is causal in simulated time.
-
-    Prefix replay is only the *same* MDP if months after ``t`` cannot influence the row read
-    at ``t``. Seed the tail of the plan with a large irrigation the agent has not chosen yet;
-    every observation up to the decision point must be bit-identical to the unseeded run.
-    """
+    """SWAT+ is causal: future plan months can't change past observations."""
     from swat_gym.monthly_env import MonthlySwatEnv
 
     try:

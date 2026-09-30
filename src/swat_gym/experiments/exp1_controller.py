@@ -1,16 +1,10 @@
-"""CMA-ES-optimised parametric feedback irrigation controller.
-
-Same optimizer and monthly action space as the open-loop bar; differs only in policy class
-(state-feedback vs open-loop). Separates "adaptivity has no value here" from "PPO failed."
-
-Controller (per growing-season month)::
+"""CMA-ES-fitted feedback irrigation controller (separates "no adaptivity value" from "PPO failed").
 
     depth = clip(a + b * (sw_target - sw) + c * precip_deficit, 0, MONTH_DEPTH_MAX)
 
-where ``sw`` and recent precip come from the previous month's ``hru_wb`` monthly row.
-Three unit-box parameters ``(a, b, c)`` — tiny search, same engine-run budget accounting.
+State from the previous month's hru_wb row.
 
-    uv run python -m swat_gym.experiments.exp1_controller --budget 5000
+    uv run python -m swat_gym.experiments.exp1_controller --budget 2200
 """
 from __future__ import annotations
 
@@ -49,19 +43,14 @@ def _decode_abc(vec) -> tuple[float, float, float]:
 
 
 def _month_state(runner: FastRunner, year_idx: int, month: int) -> tuple[float, float]:
-    """Soil water and precip for ``month`` of decision year ``year_idx`` (0-based).
-
-    Reads monthly ``hru_wb``. Missing rows (spin-up / before first month) return neutral
-    defaults so the controller degrades to the baseline ``a``.
-    """
+    """Soil water and precip for a month; neutral defaults if the row is missing."""
     try:
         wb = runner.read("hru_wb_mon.txt")
     except Exception:
         return SW_TARGET, PRECIP_NORM
     if wb is None or len(wb) == 0:
         return SW_TARGET, PRECIP_NORM
-    # Filter to the decision year: after spin-up, year_idx 0 is the first scored year.
-    # Monthly tables carry mon / yr columns in SWAT+ output.
+    # year_idx 0 = first scored year after spin-up.
     cols = {c.lower(): c for c in wb.columns}
     mon_c = cols.get("mon") or cols.get("month")
     yr_c = cols.get("yr") or cols.get("year") or cols.get("yrc")
@@ -90,8 +79,7 @@ def rollout_controller(abc, runner: FastRunner, *, start_year: int, prices,
     a, b, c = _decode_abc(abc)
     month_mm = np.zeros((N_YEARS, N_GROWING), dtype=float)
 
-    # Full-horizon replay each month (correctness first; truncation is a later speed opt).
-    # Month 0 of year 0 has no prior state — apply baseline ``a``.
+    # Full replay each month; first month uses baseline a.
     for y in range(N_YEARS):
         for mi, mon in enumerate(GROWING_MONTHS):
             if y == 0 and mi == 0:

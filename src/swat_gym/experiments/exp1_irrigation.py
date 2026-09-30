@@ -1,15 +1,7 @@
-"""Experiment 1 — irrigation (monthly growing-season cadence).
+"""Exp 1: monthly irrigation. Open-loop CMA + PPO + frozen (train-selected).
 
-**Numbering = run order.** This is the first experiment: clearest a priori adaptivity case.
+Run after exp1_ceiling and exp1_controller.
 
-Pipeline (do not skip stages)::
-
-    1. ``exp1_ceiling``     — perfect-foresight gate
-    2. ``exp1_controller``  — CMA feedback controller row
-    3. this module          — open-loop CMA monthly + PPO monthly + frozen (train-selected)
-
-    uv run python -m swat_gym.experiments.exp1_ceiling --budget 5000
-    uv run python -m swat_gym.experiments.exp1_controller --budget 5000
     uv run python -m swat_gym.experiments.exp1_irrigation --budget 300000 --ppo-seeds 3
 """
 from __future__ import annotations
@@ -36,26 +28,16 @@ from ._optimize import minimise
 
 OUT = ROOT / "runs" / "exp1_irrigation.json"
 
-#: Normalise observations before PPO sees them. Without this the policy learns an **exactly
-#: constant** schedule: measured 2026-08-07, std of applied depth across held-out windows is
-#: 0.000 mm raw vs 6.4 mm normalised, with return +1,320 $/ha and water 6,116 -> 5,352 mm.
-#: The 13 channels carry order-of-magnitude divisors, not statistics, and several sit near zero.
+#: Without obs normalisation PPO learns a constant schedule.
 NORMALISE_OBS = True
 CLIP_OBS = 10.0
 
-#: sigma ~ 0.14 on the unit action box. At the previous -1.0 (sigma ~ 0.37) the policy applied
-#: 6,116 mm against a measured 3,939; at -2.0 it applied 4,533 mm, earned more, and saturated
-#: 2 % of actions against 10 %.
+#: sigma ~0.14 (-1.0 over-irrigated and saturated more actions).
 LOG_STD_INIT = -2.0
 
 
 def score_monthly(x, windows, prices, no3_price, max_n):
-    """Open-loop score. ``max_n`` is **required**: it must match the policy path's cap.
-
-    A silent ``max_n=MAX_N_LOADING`` default here once scored every open-loop row under a
-    400 kg N/ha cap while :class:`MonthlySwatEnv` ran uncapped, which inverted the sign of
-    ``policy - fixed``. Never give this a default again.
-    """
+    """Open-loop score. ``max_n`` required, must match the policy path (rule 2). No default."""
     with FastRunner() as runner:
         return [_row(evaluate_monthly_i(x, runner, prices=prices, start_year=sy,
                                         no3_price=no3_price, max_n=max_n), sy)
@@ -63,12 +45,7 @@ def score_monthly(x, windows, prices, no3_price, max_n):
 
 
 def score_policy_monthly(model, windows, prices, no3_price, max_n, obsnorm):
-    """Roll out the deterministic policy on each window.
-
-    ``obsnorm`` is **required**: a policy trained on normalised observations scored on raw ones
-    is not a degraded policy, it is a different objective. Pass ``None`` only to state that this
-    policy was trained on raw observations.
-    """
+    """Deterministic rollout per window. ``obsnorm`` required; None only for raw-obs policies."""
     rows, plans = [], {}
     with MonthlySwatEnv(stochastic_weather=False, prices=prices, no3_price=no3_price,
                         arm="I", max_n=max_n) as env:
@@ -101,11 +78,9 @@ def train_monthly_ppo(args, cfg, prices, max_n, seed: int):
     scfg = {**cfg, "ppo_seed": seed}
     tag = f"ppo_s{seed}"
     ppo_path = args.out.with_name(f"{args.out.stem}_{tag}.zip")
-    # The observation filter is part of the policy: scored raw, a normalised policy is solving a
-    # different problem. Kept beside the weights and reloaded with them.
+    # Obs normaliser is saved beside the weights.
     norm_path = args.out.with_name(f"{args.out.stem}_{tag}_obsnorm.npz")
-    # Config-keyed, as in _focused.py: the λ sweep trains one policy per nitrate price, and an
-    # unkeyed directory would let a λ=0 checkpoint resume into a λ=40 run.
+    # Config-keyed so different λ runs never share checkpoints.
     ckpt_dir = args.out.parent / f"{args.out.stem}_{tag}_ckpt_{_cfg_key(scfg)}"
 
     def make(i):
@@ -184,21 +159,12 @@ def main(argv=None) -> dict:
     train, test = list(TRAIN_YEARS), list(TEST_YEARS)
     evals = max(1, args.budget // len(train))
     t0 = time.time()
-    # Everything the training objective depends on must key the artefacts, or a stale policy
-    # resumes into a different question. ``no3_price``/``max_n`` because they are the reward;
-    # ``default_plan`` because every arm inherits its pinned levers (crop, manure, mineral N)
-    # from it — correcting its manure to the measured per-year masses changed the objective for
-    # every arm, and without this digest the previous policies would have been silently reused.
+    # Key artefacts on everything the objective depends on.
     cfg = {"arm": "I_monthly", "budget": args.budget, "seed": args.seed,
            "prices": prices.label, "train": train, "test": test,
            "no3_price": args.no3_price, "max_n": max_n,
-           # The observation filter and exploration scale change what is learned, so they key
-           # the artefacts too — a raw-observation policy must not resume into a normalised run.
            "normalise_obs": NORMALISE_OBS, "log_std_init": LOG_STD_INIT,
            "default_plan": _cfg_key({"p": DEFAULT_PLAN.round(6).tolist()}),
-           # The calibrated model is part of the objective too. Without this a recalibration
-           # resumes the previous model's plan and policies and re-scores them, which reports a
-           # search that never happened — see ``_focused.model_digest``.
            "model": model_digest()}
 
     print(f"Exp1 irrigation monthly  budget={args.budget}  "
@@ -212,9 +178,7 @@ def main(argv=None) -> dict:
             prev = json.loads(partial.read_text())
         except (OSError, json.JSONDecodeError):
             prev = None
-        # The guard must cover everything the CMA-ES objective depends on. It once checked only
-        # arm and budget, so a schedule optimised under the 400 kg N/ha cap would silently
-        # resume into an uncapped run and be reported as that run's optimum.
+        # Resume only if the full objective config matches.
         if (isinstance(prev, dict) and prev.get("arm") == "I_monthly"
                 and prev.get("budget") == args.budget and prev.get("fixed_x")
                 and prev.get("no3_price", 0.0) == args.no3_price

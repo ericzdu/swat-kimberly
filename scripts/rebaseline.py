@@ -1,9 +1,4 @@
-"""Regenerate the regression fixture from the current model.
-
-`src/swat_gym/tests/fixtures/baseline.json` pins this model's results to the engine and
-platform that produced them, so a different SWAT+ build gives an immediate pass/fail on build
-agreement rather than silent drift. It therefore has to be regenerated deliberately, with a
-note saying *why* — never as a reflex when a test goes red.
+"""Regenerate tests/fixtures/baseline.json. Only deliberately, with a --why note.
 
     uv run python scripts/rebaseline.py --why "ported measured humidity and wind (AgriMet)"
 """

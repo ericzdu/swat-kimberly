@@ -1,25 +1,8 @@
 #!/usr/bin/env python3
-"""Step 1 of the ET protocol: a nutrient-unlimited *calibration copy* of the model.
+"""Build a nutrient-unlimited scratch copy of the model under runs/ for ET calibration.
 
-The prescribed protocol is: remove nutrient stress, then fit ET on canopy first and PET last.
-Step 1 exists so that the ET fit is not confounded by a starved canopy — a plant short of
-nitrogen builds less leaf, transpires less, and reports low ET for a reason that has nothing to
-do with ``lai_pot``, ``esco`` or ``pet_co``. Fitting those against a nitrogen problem hides a
-structural error inside a hydrology parameter, which is the mistake PROVENANCE §5h documents
-and ``corn.bm_e = 64.5`` already makes for the resident-perennial artefact.
-
-**This never touches ``model/TxtInOut/management.sch``, and it must not.** That file *is* the
-measured-practice human bar — the ``measured`` row of the five-row protocol, the source of the
-3,938.8 mm irrigation gate and the 2,090 kg N nitrogen gate. Adding fertiliser to it would
-delete the baseline every experiment is quoted against. So the no-stress configuration is built
-as a scratch tree under ``runs/``, the fit happens there, and only the fitted *parameters* are
-ever carried back to the shipped model.
-
-**Only the annual crops are fertilised.** Alfalfa already runs ``strsn = 0`` in all three of its
-years because SWAT computes legume fixation as the soil-supply shortfall, so it is nutrient-
-unlimited by construction. Adding N there would suppress fixation without relieving any stress,
-and would destroy the one clean control the comparison has: if alfalfa's ET gap does not move
-between the stressed and unstressed trees, that gap is not a nitrogen problem.
+Never edits model/TxtInOut/management.sch (it is the measured baseline). Only annual crops
+are fertilised; alfalfa is the unstressed control.
 
     uv run python scripts/et_nostress.py --sweep 0 150 300 450    # find the minimal rate
     uv run python scripts/et_nostress.py --rate 300 --build       # write the tree
@@ -47,9 +30,7 @@ OUT = ROOT / "runs" / "et_nostress_sweep.json"
 #: Crops that can be nitrogen-limited here. Alfalfa fixes, so it is deliberately absent.
 ANNUALS = ("corn", "barl")
 
-#: Days after planting for the split applications. Three splits rather than one lump: a single
-#: pre-plant application on this soil leaches and volatilises before the canopy can use it, so
-#: it would fail to remove late-season stress, which is exactly the stress that suppresses ET.
+#: Split application days after planting.
 SPLIT_DAYS = (0, 25, 50)
 
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
@@ -97,13 +78,7 @@ def fmt(op: dict) -> str:
 
 
 def with_nostress_n(text: str, rate: float) -> tuple[str, list[dict]]:
-    """Return the schedule with ``rate`` kg N/ha split over each annual crop's season.
-
-    Inserted per *planting*, not per calendar year, so the operation always lands on a growing
-    plant. Ops are re-sorted within their year by date with the original order preserved on
-    ties, because the engine detects the year boundary from a date wrap and an out-of-order
-    date would silently roll the schedule into the wrong year.
-    """
+    """Add ``rate`` kg N/ha split per annual planting; ops stable-sorted by date within year."""
     header, ops = parse(text)
     years = year_index(ops)
     added = []
@@ -139,17 +114,7 @@ def stress(runner: FastRunner) -> pd.DataFrame:
 
 
 def with_auto_irrigation(text: str) -> str:
-    """Attach the unlimited-water auto-irrigation table, removing the *water* limit.
-
-    Nitrogen is not the only thing that can hold ET below its potential. Under the measured
-    schedule alfalfa runs 23-27 water-stress days, so some of the ET gap is the field getting
-    less water than the benchmark fields did — a management difference, not a parameter error.
-    Fitting ``pet_co`` against that would absorb someone else's irrigation into this model's
-    potential evapotranspiration, which is the same mistake as absorbing a nitrogen shortfall.
-
-    ``irr_str9_unlim`` waters a *growing* plant whenever water stress appears, from an
-    unlimited source, so what is left is demand-side only.
-    """
+    """Attach irr_str9_unlim auto-irrigation to remove water stress too."""
     lines = text.splitlines()
     head, body = lines[:3], lines[3:]
     n_ops = len(body)

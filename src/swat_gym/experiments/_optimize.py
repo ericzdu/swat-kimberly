@@ -1,11 +1,4 @@
-"""CMA-ES over a bounded box, sized for expensive objectives.
-
-Not SciPy's ``differential_evolution``. Its ``popsize`` is a *multiplier on the parameter
-count*, so the 63-parameter ``all`` arm gets a 945-member population and burns ~1,900 engine
-runs before finishing a single generation. CMA-ES's default population is
-``4 + 3 ln(n)`` — about 16 at n=63 — which is the right shape when one evaluation costs an
-engine run rather than a flop.
-"""
+"""CMA-ES over [0, 1]^n (small population suits expensive evaluations)."""
 from __future__ import annotations
 
 import pickle
@@ -22,12 +15,7 @@ def minimise(fn: Callable[[np.ndarray], float], x0: Sequence[float], *,
              on_generation: Callable[[bytes, int, np.ndarray, float], None] | None = None,
              desc: str = "CMA-ES",
              ) -> tuple[np.ndarray, int, list[dict]]:
-    """Minimise ``fn`` over ``[0, 1]^n``.
-
-    Returns ``(best_x, n_evaluations, history)`` where ``history`` is a list of
-    ``{evals, best_f}`` snapshots after each generation — required to show the open-loop bar
-    actually converged rather than under-searched (the ``all`` < ``MR`` artefact).
-    """
+    """Minimise fn over [0, 1]^n -> (best_x, n_evals, history of {evals, best_f} per generation)."""
     import cma
 
     x0 = np.clip(np.asarray(x0, dtype=float), 0.0, 1.0)

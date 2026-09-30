@@ -1,9 +1,4 @@
-"""The measured soil-nitrate trajectory, and the balance reconstructed against it.
-
-The reconstruction exists because SWAT+ rev 62 prints no soil nitrate pool (see the module
-docstring). That makes it the one calibration target whose *model* side is assembled by hand,
-so it needs its arithmetic pinned down rather than trusted.
-"""
+"""Tests for measured soil NO3 and the reconstructed balance."""
 from __future__ import annotations
 
 import sys
@@ -20,18 +15,12 @@ from n_trajectory import fertiliser_split, measured, score, trajectory  # noqa: 
 from swat_gym import FastRunner  # noqa: E402
 from swat_gym.fastrunner import TXTINOUT  # noqa: E402
 
-#: kg N/ha per ppm over the measured 0-122 cm profile: 0.1 * sum(thickness_cm * bulk density),
-#: with the measured densities. Both units are written to the CSV and they must stay consistent.
+#: kg N/ha per ppm over 0-122 cm.
 KG_HA_PER_PPM = 17.04
 
 
 def test_measurement_matches_the_model_initial_condition():
-    """The 2013 sample is what ``nutrients.sol:nitrate`` was set from — they must still agree.
-
-    This is the join between the extraction and the port. If someone re-extracts the
-    spreadsheet with a different depth weighting, or re-ports the initial condition, this
-    catches the two drifting apart.
-    """
+    """2013 sample must match nutrients.sol nitrate."""
     obs = measured()
     ported = float(next(
         line.split()[3] for line in (TXTINOUT / "nutrients.sol").read_text().splitlines()
@@ -68,8 +57,7 @@ def test_bracket_is_ordered_and_collapses_without_fertiliser():
         traj = trajectory(r)
 
     assert (traj["sim_lo"] <= traj["sim_hi"] + 1e-9).all(), "bracket must be ordered"
-    # The three alfalfa years apply no manure, so the unreported-ammonium term is zero and the
-    # balance is exact. Those are the years the reconstruction can be held to.
+    # Alfalfa years are exact (no manure).
     exact = traj[traj["exact"]]
     assert list(exact.index) == [2015, 2016, 2017]
     assert (exact["sim_hi"] - exact["sim_lo"]).abs().max() < 1e-9

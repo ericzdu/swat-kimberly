@@ -1,16 +1,4 @@
-"""Agronomic feasibility for a rotation plan.
-
-Unconstrained search finds degenerate optima -- corn nine years running, or manure at the
-bound every year -- that are not agronomy but artefacts of an unbounded action space.
-``EXPERIMENTS.md`` names three rules; they are implemented here as a **repair** rather than a
-rejection.
-
-Repair, not reject, because the search sees a dense reward either way. Rejecting infeasible
-plans gives an optimizer (or a policy) a flat, uninformative penalty region it has to random-walk
-out of; projecting them onto the nearest feasible plan means every action maps to a real field
-outcome and the gradient stays meaningful. The cost is that several actions can map to the same
-plan, which is recorded in :func:`violations` so an experiment can report how often it bit.
-"""
+"""Agronomic feasibility, enforced by repair (projection), not rejection. See violations()."""
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -18,20 +6,13 @@ from dataclasses import replace
 
 from .schedule import MANURE_SOURCES, MINERAL_N_FRAC, YearAction
 
-#: Minimum years an alfalfa stand must run once established. A stand is expensive to establish
-#: and is not torn out after one season; three years is the site's own rotation length.
+#: Minimum alfalfa stand length, years.
 MIN_ALFALFA_STAND = 3
 
 #: Maximum consecutive corn years, a standard agronomic limit on corn-on-corn.
 MAX_CONSECUTIVE_CORN = 2
 
-#: Agronomic nitrogen loading cap, kg N/ha/yr. Set at roughly the N removal of the most
-#: demanding crop in the rotation, which is the usual basis for a manure permit. This is a
-#: **policy choice, not a measurement** -- vary it if the `N` arm turns out to sit against it.
-#:
-#: It binds on **manure and mineral N together**. Capping each separately would let a plan
-#: apply 400 kg N as manure and another 400 as urea, which is not a cap; it would also make
-#: the two sources non-substitutable, and substitution is the question Exp 1 asks.
+#: N loading cap, kg N/ha/yr, on manure + mineral combined. A policy choice, not a measurement.
 MAX_N_LOADING = 400.0
 
 #: N fraction (min_n + org_n) of each measured GRACEnet manure, from fertilizer.frt.
@@ -44,12 +25,7 @@ def max_manure_mg(source: str, max_n: float = MAX_N_LOADING) -> float:
 
 
 def _set_mineral(action: YearAction, target_kg: float) -> YearAction:
-    """Scale the year's mineral N to ``target_kg``, **preserving the number of passes**.
-
-    Clipping must not change the cadence: if it zeroed trailing splits instead of scaling all
-    of them, a k=7 plan pushed against the cap would silently become a k=4 plan and the whole
-    cadence comparison would be measuring the constrainer.
-    """
+    """Scale mineral N to ``target_kg``, keeping the number of passes."""
     if not action.fert_splits:
         return replace(action, fert_n_kg=max(0.0, target_kg))
     current = mineral_n(action)
@@ -66,24 +42,14 @@ def manure_n(action: YearAction) -> float:
 
 
 def mineral_n(action: YearAction) -> float:
-    """Mineral nitrogen for the year, kg N/ha, however the action expressed it.
-
-    A split program supersedes the single application (the same precedence
-    :func:`swat_gym.schedule._year_ops` applies when it writes the ops), so the cap sees the
-    program's *sum* rather than double-counting a scalar the schedule never emitted.
-    """
+    """Year's mineral N, kg/ha (splits supersede the scalar, as in schedule)."""
     if action.fert_splits:
         return float(sum(kg for _, kg in action.fert_splits))
     return action.fert_n_kg
 
 
 def total_n(action: YearAction) -> float:
-    """Nitrogen applied from both sources, kg N/ha -- what :data:`MAX_N_LOADING` bounds.
-
-    Manure N is ``min_n + org_n``, i.e. total N applied rather than plant-available N. The
-    mineral term is already in kg N by construction, since the action carries N and
-    :mod:`swat_gym.schedule` converts to product mass when it writes the op.
-    """
+    """Total N applied (manure min_n + org_n, plus mineral), kg/ha."""
     return manure_n(action) + mineral_n(action)
 
 
@@ -105,8 +71,7 @@ def violations(actions: Sequence[YearAction], *,
             j = i
             while j < len(crops) and crops[j] == "alfa":
                 j += 1
-            # A stand running to the end of the horizon is truncated by the horizon, not by
-            # the plan, so it is not a violation.
+            # Stand cut off by the horizon is not a violation.
             if (j - i) < MIN_ALFALFA_STAND and j < len(crops):
                 out.append(f"year {i}: alfalfa stand of {j - i} < {MIN_ALFALFA_STAND} years")
             i = j
@@ -127,11 +92,7 @@ def violations(actions: Sequence[YearAction], *,
 
 def repair(actions: Sequence[YearAction], *,
            max_n: float | None = MAX_N_LOADING) -> list[YearAction]:
-    """Project a plan onto the nearest feasible one, left to right.
-
-    Ordering matters and is deliberate: rotation structure is fixed first, because extending an
-    alfalfa stand changes which years exist to carry manure, and only then is the N cap applied.
-    """
+    """Project a plan onto the nearest feasible one: rotation rules first, then N cap."""
     out = [replace(a) for a in actions]
     n = len(out)
 
@@ -161,10 +122,7 @@ def repair(actions: Sequence[YearAction], *,
         else:
             run = 0
 
-    # 3. N loading: clip to the shared cap, keeping the chosen sources and timing.
-    #    Mineral N gives way first. Manure at this site is a disposal stream the grower is
-    #    taking anyway, so the realistic decision is how much urea to buy *on top of* it --
-    #    clipping urea first models that. Manure is clipped only if it breaches the cap alone.
+    # 3. N cap: clip mineral first; manure only if it alone exceeds the cap.
     if max_n is not None:
         for k in range(n):
             a = out[k]
@@ -175,10 +133,7 @@ def repair(actions: Sequence[YearAction], *,
             elif m_n + mineral_n(a) > max_n:
                 out[k] = _set_mineral(a, max_n - m_n)
 
-    # 4. Alfalfa fixes its own nitrogen; fertilising it is not a real management option here
-    #    and would let the optimizer park surplus N in a year that does not need it. Applies
-    #    to both sources — otherwise the mineral lever inherits exactly the loophole that
-    #    zeroing manure was added to close.
+    # 4. No N (either source) on alfalfa.
     for k in range(n):
         if out[k].crop == "alfa" and (out[k].manure_mg > 0 or mineral_n(out[k]) > 0):
             out[k] = _set_mineral(replace(out[k], manure_mg=0.0), 0.0)

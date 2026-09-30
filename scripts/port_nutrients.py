@@ -1,20 +1,7 @@
-"""Port initial soil nutrients, topography, hydrology and basin N-cycling parameters.
+"""Port initial soil nutrients, topography, hydrology and basin N-cycling params (ArcSWAT
+reference HRU 119; GRACEnet measurements win where they exist).
 
-**Source: the calibrated ArcSWAT reference model** (`TxtInOut-2`, HRU 119 / subbasin 14 —
-the same Kimberly GRACEnet field), *not* RuFaS. The reference reproduces the GRACEnet
-yields closely, so where the two disagree the reference wins.
-
-The single most consequential value here is ``orgn_min`` (SWAT2012 ``CMN``), the humus
-organic-N mineralisation rate factor. The SWAT+ template ships it at **0.0**, meaning humus
-organic N never mineralises — which is precisely the "only ~14 %/yr of applied organic
-manure N becomes plant-available" symptom that made corn and barley N-limited here while
-alfalfa (which fixes its own N) was unaffected. The reference uses 0.0020.
-
-``pet_co`` is SWAT+'s PET multiplier in hydrology.hyd, the structural analogue of the RuFaS
-``pet_calibration_coefficient`` (2.4). **This script no longer owns it** —
-``scripts/calibrate_petco.py`` does, having fitted it to measured AgriMet grass-reference ETos
-(PROVENANCE §5h). Running this port used to reset ``pet_co`` to 1.0, which would silently
-discard that calibration; it is now left alone unless ``--pet-co`` is passed explicitly.
+pet_co is owned by calibrate_petco.py; only changed here if --pet-co is passed.
 """
 from __future__ import annotations
 
@@ -35,17 +22,7 @@ REF_SLOPE_LEN = 121.951    # SLSUBBSN
 REF_DIST_CHA = 35.0        # DIS_STREAM
 REF_CANMX = 0.0            # CANMX (the SWAT+ template ships 1.0)
 
-# basins.bsn -> parameters.bsn. The SWAT2012 name is in the comment.
-#
-# ``orgn_min`` (SWAT2012 CMN) is no longer the reference's 0.0020. ``USDA Long-Term
-# Manure/LT Manure Data Summary.xlsx`` contains a completed six-configuration sweep of this
-# parameter against *measured* buried-bag net N mineralisation on this soil (209.8 kg N/ha/yr
-# over eight years). The accepted configuration is labelled **cmn = 0.001** and scores +4.7 %;
-# the SWAT defaults score -36.2 % and the alternatives tested land at -17.8 %, +40.2 % and
-# +48.3 %. Someone did this calibration on this site against real data, so their value is used
-# rather than the reference model's unexplained doubling of it. Independently confirmed to be
-# yield-neutral here: sweeping 0.0003-0.003 moves barley yield by 0.00 t/ha, because N is not
-# the limiting factor for these crops (see PROVENANCE 5e).
+# basins.bsn -> parameters.bsn (SWAT2012 name in comments).
 REF_BASIN = {
     "orgn_min": 0.0010,    # CMN     humus active organic-N mineralisation rate factor
     "n_uptake": 10.0,      # N_UPDIS nitrogen uptake distribution parameter
@@ -56,30 +33,7 @@ REF_BASIN = {
 
 
 def measured_soil_nutrients() -> tuple[float, float]:
-    """Profile-mean initial nitrate and labile P (ppm) from the GRACEnet April-2013 sampling.
-
-    The reference model starts the profile at **zero nitrate** and the SWAT+ template default
-    of 5 ppm labile P, then charges the soil with a synthetic 350 kg N/ha elemental fertiliser
-    in the 2012 spin-up. That device exists only because the initial state was unknown — and it
-    was not unknown. ``GraceNet Soil and Nutrient Properties.xlsx::Soil N & P`` samples four
-    plots at five depths in April 2013:
-
-        depth (cm)      15      31      61      91     122
-        NO3-N mg/kg  16.68   20.75    7.33    5.63    5.60
-        Olsen P      53.35    6.88    1.88    0.88    1.23
-
-    Averaged over the profile by layer mass (thickness x bulk density, the same basis SWAT+
-    uses to convert ppm to kg/ha) this gives ~9.3 ppm nitrate and ~8.1 ppm P. Both land close
-    to the reference model's own internal state — its 1 Jan 2013 charge was 183.3 kg NO3-N/ha
-    == 10.7 ppm, and its converted labile P was 9.45 ppm — which is the independent check that
-    the measurement and the reference are describing the same field, and that the zero in the
-    ``.chm`` file was an initialisation placeholder rather than a claim about the soil.
-
-    Two caveats, stated rather than hidden. (1) The measurement is April 2013 and it is being
-    applied at 1 January 2012; the 2012 spin-up year absorbs the offset. (2) Olsen P is not
-    identical to SWAT labile P — the topsoil is 53 mg/kg against a profile mean of 8 — so the
-    profile mean is used rather than the surface value, and P remains the weaker of the two.
-    """
+    """Profile-mean initial NO3 and labile P (ppm) from GRACEnet April-2013, weighted by layer mass."""
     df = pd.read_csv(SOIL_CSV).sort_values("depth_mm")
     thick = df["depth_mm"].diff().fillna(df["depth_mm"])
     mass = thick * df["bd_g_cm3"]

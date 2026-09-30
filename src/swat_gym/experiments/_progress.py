@@ -1,8 +1,4 @@
-"""Terminal progress bars for long CMA / PPO runs.
-
-Uses ``tqdm`` when installed (``uv sync --extra rl``). Falls back to quiet no-ops so unit
-tests and bare installs keep working without the optional dep.
-"""
+"""tqdm progress bars for CMA/PPO; no-ops if tqdm is missing."""
 from __future__ import annotations
 
 from typing import Any

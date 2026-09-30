@@ -1,8 +1,4 @@
-"""``swat-gym`` — a management-optimization layer over the Kimberly SWAT+ field.
-
-See ``EXPERIMENTS.md`` for the plan. Phase 0 (this code) is the hot path the rest is priced
-off: :class:`~swat_gym.fastrunner.FastRunner`.
-"""
+"""swat-gym: management optimisation over the Kimberly SWAT+ field."""
 from .engine import EngineError, find_engine, run_engine
 from .fastrunner import EDITABLE, TXTINOUT, FastRunner
 from .manifest import input_files

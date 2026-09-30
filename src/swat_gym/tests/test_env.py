@@ -1,9 +1,4 @@
-"""Tests for the action space, the constraint repair, and the environment.
-
-The properties that matter here are the ones a silent break would corrupt an experiment with:
-that a repaired plan is actually feasible, that an arm only moves its own lever, and that the
-weather window is really changing the dynamics rather than being ignored.
-"""
+"""Tests for the action space, constraint repair and env."""
 from __future__ import annotations
 
 import numpy as np
@@ -119,11 +114,7 @@ def test_time_sim_window_spans_spinup_plus_decision_years():
     assert int(txt[1]) == 1996 and int(txt[3]) == 1996 + N_YEARS
 
 
-# --- the default must really be the default ----------------------------------------------
-# Two compounding defects once made every generated row 22 % drier than the human bar it was
-# scored against — an `eff_frac` of 0.85 the measured record does not have, and a depth that
-# integrated to 3,060 mm against a measured 3,938.8. Neither was visible in any assertion, and
-# the resulting confound was read as an experimental finding. These pin both.
+# Default must reproduce measured irrigation (IRR_EFF = 1.0, 3,938.8 mm).
 
 def test_generated_irrigation_efficiency_matches_the_measured_record():
     """A generated event must deliver what it asks for, exactly as the measured events do."""
@@ -152,11 +143,7 @@ def test_default_plan_irrigates_like_measured_practice():
 # --- environment ------------------------------------------------------------------------
 
 def test_episode_terminates_and_rewards_sum_to_profit():
-    """Per-step rewards must telescope to the rotation profit, up to the learning-signal scale.
-
-    ``info["cum_profit"]`` stays in dollars precisely so evaluation is never affected by
-    :data:`SwatEnv.REWARD_SCALE`; this pins the two together.
-    """
+    """Per-step rewards telescope to rotation profit (x REWARD_SCALE)."""
     rng = np.random.default_rng(1)
     with SwatEnv(stochastic_weather=False, arm="N") as env:
         env.reset(start_year=2012)
@@ -169,9 +156,7 @@ def test_episode_terminates_and_rewards_sum_to_profit():
 
 
 def test_observation_exposes_soil_carryover():
-    """Next year's weather is unknowable at decision time, so carryover is the *only* channel
-    a policy can be adaptive through. An observation without it cannot express adaptivity even
-    in principle — which is what Exp 1's PPO null was actually measuring."""
+    """Obs must include carryover state (the only adaptive channel)."""
     with SwatEnv(stochastic_weather=False, arm="N") as env:
         obs, _ = env.reset(start_year=2012)
         assert obs.shape == (OBS_DIM,)
@@ -185,9 +170,7 @@ def test_observation_exposes_soil_carryover():
 
 
 def test_observation_reports_previous_crop():
-    """The crop is no longer chosen by any arm (scope reduction, 2026-09-09), so the previous
-    crop is whatever the fixed measured rotation put there. The observation must still report
-    it — it is the channel a policy sees the rotation through."""
+    """Obs reports the previous crop from the fixed rotation."""
     from swat_gym.env import MEASURED_ROTATION
 
     with SwatEnv(stochastic_weather=False, arm="I") as env:

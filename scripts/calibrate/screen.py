@@ -1,14 +1,4 @@
-"""Morris screen: which parameters actually move this model's residuals?
-
-Calibrating by intuition on a model this far off invites fitting the wrong knob -- the
-``orgn_min`` episode in the README is exactly that failure, where a real defect hid behind a
-plausible-sounding structural story. A screen is cheap insurance: at 0.55 s a run, a full
-Morris design over ~16 parameters costs a couple of minutes and says which of them can move
-barley biomass at all before anyone tries.
-
-Elementary effects are reported per *objective*, not pooled, because the residuals point in
-opposite directions -- corn and barley are low, alfalfa is high -- so a parameter that lifts
-all three equally is useless here and a pooled score would hide that.
+"""Morris screen of which parameters move each residual (reported per objective, not pooled).
 
     uv run python scripts/calibrate/screen.py            # r=10, ~170 runs
     uv run python scripts/calibrate/screen.py --r 20     # tighter, ~340 runs
@@ -33,9 +23,7 @@ from swat_gym.params import CALIBRATABLE, Param, apply  # noqa: E402
 
 from calib_report import GRACENET, collect, pbias  # noqa: E402
 
-#: Bounds are agronomic ranges, not arbitrary multiples of the current value. bm_e is
-#: radiation-use efficiency (kg/ha per MJ/m2); lai_pot the potential leaf area index;
-#: harv_idx the fraction of biomass removed; tmp_opt/tmp_base the growth temperature window.
+#: Agronomic bounds.
 PARAMS = [
     # --- barley: the crop needing ~2.4x its current biomass ---
     Param("plants.plt", "barl", "bm_e", 20.0, 45.0),

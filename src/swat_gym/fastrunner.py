@@ -1,21 +1,6 @@
-"""The gym's hot path: run SWAT+ many thousands of times, cheaply.
+"""Fast repeated SWAT+ runs: copy inputs once, rewrite only edited files per run.
 
-``swat_kimberly.runner.KimberlySwat`` copies the whole 14 MB / 238-file ``TxtInOut`` per run
-and drives the engine through pySWATPlus — 3.9 s against an engine that finishes in 0.42 s.
-That is fine for one-off comparison runs, and it stays the reference implementation. It is
-not viable for a search that needs thousands of evaluations.
-
-:class:`FastRunner` inverts the cost: copy the *inputs only*, **once**, at construction; then
-per run rewrite just the handful of schedule files that changed and invoke the engine directly.
-
-Guarantees that matter for correctness:
-
-* **No stale reads.** Every file not in the input manifest is deleted before each run, so a
-  table left behind by a previous (or failed) run can never be mistaken for this run's output.
-* **No cross-run leakage.** Mutated files are restored from the pristine source each run, so
-  an edit applied in run *n* does not persist into run *n+1*.
-* **Dynamics untouched.** Only schedule inputs and ``print.prt``'s output flags are written;
-  no SWAT+ source, binary, or parameter file is patched.
+Each run deletes non-input files (no stale reads) and restores edited files (no leakage).
 """
 from __future__ import annotations
 
@@ -33,8 +18,7 @@ from .printprt import GYM_OUTPUTS, trim
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TXTINOUT = PROJECT_ROOT / "model" / "TxtInOut"
 
-#: Files an action may rewrite. Restricting the set is a guardrail, not a limitation: an
-#: action that needs to touch anything else is a change to the experiment, not to a schedule.
+#: Files an action may rewrite.
 EDITABLE = frozenset({
     "management.sch",   # rotation, fertiliser, irrigation, harvest operations
     "irr.ops",          # per-event irrigation amounts
@@ -46,11 +30,7 @@ EDITABLE = frozenset({
 
 
 class FastRunner:
-    """A reusable SWAT+ working directory.
-
-    One instance owns one scratch directory and is **not** thread-safe or process-shared —
-    give each parallel worker its own.
-    """
+    """Reusable SWAT+ working dir. Not thread/process safe; one per worker."""
 
     def __init__(
         self,
@@ -61,9 +41,7 @@ class FastRunner:
         keep: Mapping[str, set[str]] = GYM_OUTPUTS,
         editable: frozenset[str] = EDITABLE,
     ) -> None:
-        #: Calibration is the one legitimate reason to widen this: fitting the model *is*
-        #: changing its dynamics, whereas an action must not. Gym code leaves it at the
-        #: default; ``scripts/calibrate/`` passes :data:`CALIBRATABLE`.
+        #: Only calibration widens this (passes CALIBRATABLE).
         self.editable = frozenset(editable)
         self.source = Path(txtinout)
         self.manifest = input_files(self.source)
@@ -83,10 +61,7 @@ class FastRunner:
         # copy2 preserves the executable bit, so the engine stays runnable.
         self.engine = self.workdir / self._engine_name
 
-        #: Engine invocations by this runner. The unit budgets are matched in: PPO's
-        #: `total_timesteps` and CMA-ES's evaluation count are *not* comparable, and last
-        #: round that let PPO have 200,000 engine runs against the fixed-schedule optimizer's
-        #: 6,528 — a 30x gap that produced the entire apparent advantage. Count, don't assume.
+        #: Engine runs; the unit PPO and CMA-ES budgets are matched in.
         self.n_runs = 0
 
         if trim_outputs:
@@ -134,14 +109,7 @@ class FastRunner:
     # -- reading -------------------------------------------------------------------
 
     def read(self, name: str) -> pd.DataFrame:
-        """Read a SWAT+ output table, returning numeric columns as numbers.
-
-        The tables are inconsistent about their header: ``basin_crop_yld_yr.txt`` is
-        title + column names, but ``hru_wb_yr.txt``, ``hru_pw_yr.txt`` and ``basin_nb_yr.txt``
-        insert a **units row** ("mm", "kgha", "m**2/m**2") beneath the names. Read naively,
-        that row becomes data and forces every column to string dtype — so ``df["et"].mean()``
-        raises rather than returning a number. Detect it by the first cell being non-numeric.
-        """
+        """Read a SWAT+ output table as numeric; skips the units row some tables have."""
         path = self.workdir / name
         if not path.is_file():
             raise EngineError(
@@ -158,12 +126,7 @@ class FastRunner:
         return df
 
     def yields(self) -> pd.DataFrame:
-        """Annual dry-matter yield per crop, as ``basin_crop_yld_yr.txt`` reports it.
-
-        ``yld_t`` (total) is the trustworthy column; the file's own per-hectare column is
-        **per cut** for multi-cut alfalfa, because ``harv_area`` accumulates one field area
-        per cut. See the README section on reading this table.
-        """
+        """Annual dry yield per crop. Use yld(t); the per-ha column is per cut for alfalfa."""
         df = self.read("basin_crop_yld_yr.txt")
         return df[df["yld(t)"] > 0].reset_index(drop=True)
 

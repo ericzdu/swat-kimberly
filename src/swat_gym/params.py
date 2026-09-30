@@ -1,15 +1,4 @@
-"""Read and write named scalar parameters in SWAT+'s fixed-width input tables.
-
-Calibration needs to move values that an *action* must never touch -- radiation-use
-efficiency, soil evaporation compensation, mineralisation rates. Those live in whitespace-
-aligned tables whose header row names the columns, so a parameter is addressed by
-``(file, row, column)``: ``("plants.plt", "barl", "bm_e")``.
-
-Every write goes through :func:`set_value`, which rewrites the whole row at a fixed width
-rather than patching characters in place. SWAT+ reads these files free-format (split on
-whitespace), so column alignment is cosmetic here -- unlike ``print.prt``, which is read
-positionally and is handled by :mod:`swat_gym.printprt` instead.
-"""
+"""Read/write SWAT+ table parameters addressed as (file, row, column), e.g. ("plants.plt", "barl", "bm_e")."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
@@ -23,10 +12,7 @@ CALIBRATABLE = frozenset({
     "parameters.bsn",  # basin N/P cycling: orgn_min, n_uptake, n_perc, rsd_decomp
     "soils.sol",       # awc, soil_k, carbon by layer
     "nutrients.sol",   # initial pools + fr_hum_act, the active/stable humus N split
-    # The *operative* harvest index. ``plants.plt:harv_idx`` is inert for every crop in this
-    # rotation: all three are harvested by ``hvkl`` against a ``harv.ops`` row whose
-    # ``harv_typ`` is ``biomass``, and that path reads the harvest index from here. Sweeping
-    # the plants.plt column across its full range leaves the output bit-identical.
+    # Operative harvest index (plants.plt harv_idx is inert for biomass harvest).
     "harv.ops",
 })
 
@@ -40,10 +26,7 @@ HEADER_LINE = {
     "harv.ops": 1,
 }
 
-#: Columns that SWAT+ reads as Fortran integers. List-directed input of ``120.00000`` into an
-#: integer field silently mis-parses under gfortran (rev 62), shifting every later column on
-#: that row — the Kimberly yield collapse on first 62 bring-up was exactly this for
-#: ``days_mat``. Write these without a decimal point.
+#: Fortran integer columns; must be written without a decimal point or the row mis-parses.
 INTEGER_COLUMNS = frozenset({
     ("plants.plt", "days_mat"),
     ("plants.plt", "yrs_mat"),
@@ -112,11 +95,7 @@ def set_value(text: str, file: str, row: str, column: str, value: float) -> str:
 
 
 def apply(sources: Mapping[str, str], values: Mapping[Param, float]) -> dict[str, str]:
-    """Apply many parameter values, returning ``{filename: new content}`` for changed files.
-
-    ``sources`` maps filename -> pristine content. Only files actually touched come back, so
-    the result can be handed straight to :meth:`swat_gym.FastRunner.run`.
-    """
+    """Apply values; returns {filename: new content} for changed files only."""
     out: dict[str, str] = {}
     for param, value in values.items():
         text = out.get(param.file, sources[param.file])

@@ -1,18 +1,7 @@
-"""Perfect-foresight value for monthly irrigation (Exp 1 gate).
+"""Exp 1 gate: per-window oracle schedule vs one shared schedule = foresight value.
 
-Optimise a *separate* open-loop monthly schedule for each weather window (oracle), and
-compare the mean to one *shared* schedule optimised across all training windows. The gap is
-the value of perfect information: how much of the achievable profit depends on knowing which
-weather year you are in.
-
-**It is an estimate, not a ceiling — do not report it as an upper bound.** Each per-window
-oracle is itself a finite-budget CMA-ES search over 42 dimensions and can be under-converged,
-which biases the gap *down*. A learned policy exceeding it is therefore possible and has been
-observed; that indicates an under-converged oracle, not a policy that beat perfect
-information. The keys are ``foresight_train`` / ``foresight_test`` for that reason.
-
-If the gap is inside the ~200–300 $/ha noise floor, Exp 1's adaptivity answer is already
-known and cluster PPO should be skipped.
+An estimate, not an upper bound (oracles can be under-converged). If within the ~250 $/ha
+noise floor, skip PPO.
 
     uv run python -m swat_gym.experiments.exp1_ceiling --budget 5000
 """

@@ -1,11 +1,4 @@
-"""Tests for the mineral-N lever and the nitrogen cap the two sources share.
-
-The load-bearing one is :func:`test_mineral_n_matches_engine_nitrogen`: the action is expressed
-in **kg N/ha** but ``op_data3`` wants kg of *product*, so the schedule divides by the product's
-``min_n``. Agreeing with ``basin_nb_yr.fertn``, which the engine computes independently by
-multiplying that mass back out, is a real check on the conversion rather than a restatement of
-it. Getting it backwards would silently apply 2.17x the intended nitrogen.
-"""
+"""Tests for the mineral-N lever and shared N cap (kg N -> kg product conversion)."""
 from __future__ import annotations
 
 import numpy as np
@@ -109,8 +102,7 @@ def test_n_arm_owns_both_sources_and_nothing_else():
     # manure rate/day/source + two mineral (rate, day) pairs
     assert set(ARMS["N"]) == {3, 4, 5, 6, 7, 8, 9}
     assert not set(ARMS["N"]) & set(ARMS["I"]), "N and I must not share dimensions"
-    # Crop dimensions 0-2 are still decoded (the rotation is simulated) but belong to no arm,
-    # so no experiment can move them — that is what makes the alfalfa bias common-mode.
+    # Crop dims belong to no arm.
     assert not set(ARMS["N"]) & {0, 1, 2}
     assert not set(ARMS["I"]) & {0, 1, 2}
 
@@ -125,18 +117,13 @@ def test_mineral_range_reaches_the_cap():
 
 
 def test_two_applications_nest_a_single_one():
-    """Exp 1c found k>=3 harmful and k=1/k=2 tied, so the arm must be able to *choose* k=1.
-
-    Driving one rate to zero has to yield one application pass, not two at half rate — if the
-    zero-rate entry still emitted an op the arm would be paying a pass cost it never chose.
-    """
+    """Zeroing one rate gives one pass, not two."""
     v = DEFAULT_PLAN[0].copy()
     v[6], v[8] = 1.0, 0.0
     a = decode_year(v)
     assert len(a.fert_splits) == 2, "both slots exist in the action"
     assert sum(kg > 0 for _, kg in a.fert_splits) == 1, "only one is actually applied"
-    # Count *mineral* ops only: DEFAULT_PLAN also carries 45 Mg of manure, which is its own
-    # legitimate fert op and not the zero-rate split this test is looking for.
+    # Count mineral ops only (manure is a separate op).
     sch = build([replace(a, crop="corn")])["management.sch"]
     rows = [ln.split() for ln in sch.splitlines() if ln.split()[:1] == ["fert"]]
     assert sum(r[4] == MINERAL_SOURCE for r in rows) == 1
@@ -185,11 +172,7 @@ def test_fert_applied_separates_the_two_sources():
 
 
 def test_mineral_n_matches_engine_nitrogen():
-    """The engine's own fertn must agree with the kg N the action asked for.
-
-    This is the conversion cross-check: we write kg of product, SWAT+ multiplies it back by
-    min_n, and the round trip has to land on the action's kg N.
-    """
+    """Engine fertn matches the action's kg N."""
     from swat_gym.env import _edits
 
     plan = [YearAction(crop="corn", manure_mg=0.0, fert_n_kg=180.0, irr_depth=0.0)] * 2

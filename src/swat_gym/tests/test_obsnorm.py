@@ -15,11 +15,7 @@ def _norm(seed=0, dim=13):
 
 
 def test_matches_real_vecnormalize():
-    """Checked against SB3's own filter, not against a re-statement of my formula.
-
-    Re-implementing the arithmetic and asserting it equals itself would pass while diverging
-    from what PPO actually trained on, which is the only thing that matters here.
-    """
+    """Matches SB3's VecNormalize filter."""
     import gymnasium as gym
     from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
@@ -69,12 +65,7 @@ def test_apply_passes_raw_when_none():
 
 
 def test_scorers_require_an_explicit_obsnorm():
-    """No default, for the same reason ``max_n`` has none.
-
-    A policy trained on normalised observations and scored on raw ones is not degraded, it is
-    solving a different problem — and the numbers stay plausible, so nothing warns you. The
-    nitrogen-cap version of this mistake inverted Exp 1's headline.
-    """
+    """obsnorm has no default."""
     from swat_gym.experiments.exp1_irrigation import score_policy_monthly
 
     p = inspect.signature(score_policy_monthly).parameters["obsnorm"]

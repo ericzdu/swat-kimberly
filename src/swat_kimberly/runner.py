@@ -1,10 +1,4 @@
-"""Thin pySWATPlus wrapper for the Kimberly SWAT+ model.
-
-The model lives in ``model/TxtInOut`` (cloned from the SWAT+ ``a10_single_hru`` demo and
-progressively edited into the Kimberly, ID GRACEnet field scenario). pySWATPlus'
-``TxtinoutReader`` locates the vendored SWAT+ engine inside that folder and runs it in an
-isolated ``sim_dir`` so the source stays pristine.
-"""
+"""pySWATPlus wrapper for model/TxtInOut; runs in an isolated sim_dir (slow reference path)."""
 from __future__ import annotations
 
 import os
@@ -14,10 +8,7 @@ from pathlib import Path
 import pandas as pd
 from pySWATPlus import TxtinoutReader, utils as _pysp_utils
 
-# --- engine discovery shim ---------------------------------------------------
-# pySWATPlus 1.3.0 only recognizes Linux ELF / Windows PE when locating the SWAT+
-# engine; teach it Mach-O, and ignore backups / wrong-OS siblings so Mac+Linux
-# rev-62 binaries can coexist in TxtInOut (FastRunner already does this).
+# pySWATPlus 1.3.0 can't find Mach-O engines; patch discovery (skip .bak / wrong OS).
 _MACHO_MAGIC = {
     b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",  # 64/32-bit little-endian
     b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce",  # 64/32-bit big-endian
