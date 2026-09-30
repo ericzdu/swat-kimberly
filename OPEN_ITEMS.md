@@ -38,16 +38,16 @@ Working checklist for PAPER.md. Numbers are cited elsewhere; don't renumber.
 12. **`rsd_decomp` inert; manure organic N never enters fresh residue** (`rsd_nitorg_n` = 0).
     `fresh_manure` tagging ruled out. Likely rev 62 `fert` routes organic N straight to humus.
     Confirm against rev 62 source before attributing the mineralisation shortfall to the engine.
-13. **Methodology fixes 2026-08-28** (tests in `test_focused.py`). Live: `--max-n` required and
-    recorded; `paired()` reports `se_ess`, no `se`; `rerun_exp1.sh` reuses one gate and exits 2
-    on failure. Retired with Exp 3/4 but still binding as principles: a recorded warm start must
-    actually be passed; re-scoring a winner across λ is not re-selecting it (store separable
-    terms).
+13. **Methodology principles** (tests in `test_stats.py`, `test_plan_env.py`): `paired()`
+    reports `se_ess`, no `se`; open-loop and policy share `plan.evaluate`; `run_all.sh` reuses
+    one gate and exits 2 on failure. Still binding: re-scoring a winner across λ is not
+    re-selecting it.
 14. *Resolved 2026-08-28.* Under workbook params corn N stress fell to 5.2 d; the test now
     asserts the annual crops collectively (barley 35.7 d) vs alfalfa 0
     (`test_annuals_are_n_stressed_and_alfalfa_is_not`).
 15. **`pet_co` stays 0.964 — decided, don't reopen** without on-site crop-ET data. ET protocol
-    run vs regional OpenET (`scripts/et_nostress.py`, `scripts/et_gap_check.py`): nitrogen
+    run vs regional OpenET (`et_nostress.py`/`et_gap_check.py`, removed 2026-09-30; in git
+    history; outputs `runs/et_*.json`): nitrogen
     moves ET < 0.4 %; canopy moves Kc ≤ 0.02 (LAI already saturated); ~25–40 % of the gap is
     water supply (irrigation management); no single `pet_co` fits all crops. Report in-crop ET
     11–31 % below the benchmark (21 other fields, 2020–22) as a limitation.
@@ -58,21 +58,21 @@ Working checklist for PAPER.md. Numbers are cited elsewhere; don't renumber.
     Re-check both on the refit model (#18).
 17. *Closed 2026-09-28.* PAPER.md has no Exp 3/4 sections; Exp 1 numbers there are pre-refit
     (#18).
-18. **Model refit 2026-09-10; downstream artefacts must be re-run.** `PARAMS` is now the N cycle
-    only (PROVENANCE §6). Pre-refit copies: `runs/archive/pre_refit_20260910/`.
-    - Done: ceiling (2026-09-11) +360.8 $/ha, `se_ess` 71.8, `ci95_boot` [293.4, 424.3],
-      `ci95_ess` [220.0, 501.6], per-window 462.1 / 352.4 / 238.6 / 383.2 / 367.8,
-      `gate_pass: true`. Quote the interval (ESS lower bound < 250). Pre-refit +721.5 overstated
-      headroom. Controller re-run 2026-09-11.
-    - Remaining: grower rule → Exp 1 irrigation (no `runs/exp1_irrigation.json`; one partial
-      PPO checkpoint) → Exp 2.
-    - Paired differences (signs) should survive the refit; $/ha levels will not.
+18. **All experiments must be (re-)run: `scripts/run_all.sh`.** Model refit 2026-09-10
+    (`PARAMS` = N cycle only; PROVENANCE §6); prices sourced 2026-09-14; code simplified
+    2026-09-30 (Exp 2 now monthly, no N cap). The 2026-09-11 ceiling (+360.8 $/ha, ESS CI
+    [220, 502], `gate_pass: true`), controller and Exp 1 CMA run used pre-09-14 prices and are in
+    `runs/archive/pre_price_20260914/`; pre-refit copies in `runs/archive/pre_refit_20260910/`.
+    Paired differences (signs) should survive; $/ha levels will not.
 19. *Closed 2026-09-28.* `runs/calibration.json` is tracked; `optimize.py` refuses to
     overwrite `--out` without `--overwrite`.
-20. **Grower rule** (`exp1_grower_rule`) replaces the replay-only human bar. Built and wired into
-    `rerun_exp1.sh`, Exp 2 and table scripts. To do: run on the refit model (#18), fill Table 3,
-    disclose in §6.2 (test-period weather, not fitted to profit, reference row), report fit R²
-    and per-year totals.
+20. **Grower rule** (`exp1_grower_rule`): controller fitted to the logs; a human bar that
+    responds to weather. In `run_all.sh`. To do: run (#18), fill Table 3, disclose in §6.2
+    (test-period weather, not fitted to profit, reference row), report fit R² and per-year totals.
+21. **PAPER.md describes the pre-2026-09-30 code.** Update: Exp 2 is monthly mineral N + April
+    manure on annual-crop years, irrigation at measured practice; there is no N cap (drop the
+    cap text around lines 182, 261, 283–296, 432); obs channel 10 is now "N applied this year"
+    (N lever) and the initial soil-water default is 250 mm.
 
 ## Moved to supplementary material (must exist before submission)
 

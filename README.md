@@ -7,7 +7,7 @@ raise farm profit without costing water and nitrate?
 - Profit is the reward. Sustainability (nitrate leaching) is the second objective, handled by a
   swept-λ profit–leaching frontier and dominance claims, never a single price.
 - Leaching is unvalidated on site. N₂O is IPCC Tier 1 accounting, reported, never priced.
-- Scope: Exp 1 irrigation, Exp 2 nitrogen. Rotation is fixed.
+- Scope: Exp 1 irrigation, Exp 2 nitrogen (both monthly decisions, one env). Rotation is fixed.
 - Rules and current status: `CLAUDE.md`. Runbook: `EXPERIMENTS.md`. Inputs: `PROVENANCE.md`.
   Open items: `OPEN_ITEMS.md`. Paper: `PAPER.md`, `paper/`.
 
@@ -29,14 +29,14 @@ raise farm profit without costing water and nitrate?
 ## Layout
 
 - `model/TxtInOut/` — SWAT+ model and engines.
-- `src/swat_kimberly/runner.py` — pySWATPlus wrapper (slow reference path).
-- `src/swat_gym/` — environment: `fastrunner.py` (fast runs, ~0.17 s), `schedule.py` (actions →
-  `management.sch`), `constrainers.py` (repair), `rewarders.py` (profit), `env.py` /
-  `monthly_env.py` (gyms), `experiments/`, `tests/` (`fixtures/baseline.json` = regression gate).
-- `scripts/` — `build_model.sh`, `port_*.py`, calibration (`calibrate/`, `calibrate_petco.py`),
-  checks (`check_param_state.py`, `check_source_data.py`, `compare_reference.py`,
-  `calib_report.py`, `percolation_check.py`, `et_*.py`), tables (`paper_tables.py`,
-  `exp1_strategy_table.py`), `rerun_exp1.sh`.
+- `src/swat_gym/` — `fastrunner.py` (engine runs, ~0.05 s), `schedule.py` (plan →
+  `management.sch`), `plan.py` (default plan, levers, open-loop `evaluate`), `env.py` (monthly
+  gym), `rewarders.py` (profit), `experiments/`, `tests/` (`fixtures/baseline.json` =
+  regression gate).
+- `scripts/` — `run_all.sh` (all experiments), `build_model.sh` + `port_*.py` (model build),
+  calibration (`calibrate/optimize.py`, `calibrate_petco.py`), checks (`check_param_state.py`,
+  `compare_reference.py`, `calib_report.py`, `n_trajectory.py`, `percolation_check.py`),
+  `paper_tables.py`.
 - `data/` — extracted measurements and reference-model outputs.
 - `runs/` — outputs (gitignored except `calibration.json`, `exp1b_price_ratio.json`,
   `exp1c_cadence_e500.json`).
@@ -45,8 +45,8 @@ raise farm profit without costing water and nitrate?
 
 ```bash
 uv sync --extra dev --extra rl
-uv run pytest               # add -m slow for parity vs runner.py and nesting gates
-uv run python -m swat_kimberly.runner
+uv run pytest
+SMOKE=1 bash scripts/run_all.sh   # every experiment at tiny budgets (~5 min)
 ```
 
 ## Build
@@ -58,10 +58,9 @@ uv run python -m swat_kimberly.runner
 go to `port_nutrients.py` (e.g. `--pet-co X` overrides the calibration). Run
 `scripts/check_param_state.py` afterwards.
 
-## macOS notes (handled)
+## macOS note (handled)
 
-1. The engine links Intel OpenMP; `libiomp5.dylib` is vendored and on the engine's `LC_RPATH`.
-2. pySWATPlus 1.3.0 can't detect Mach-O; `runner.py` patches its detector.
+The engine links Intel OpenMP; `libiomp5.dylib` is vendored and on the engine's `LC_RPATH`.
 
 ## Engine quirks
 

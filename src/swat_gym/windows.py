@@ -4,7 +4,7 @@ Train starts 1995-2004 (end <= 2011); test starts 2013-2017. 2012 is a buffer.
 """
 from __future__ import annotations
 
-from .env import N_YEARS, SPINUP, WEATHER_YEARS
+from .plan import N_YEARS, SPINUP, WEATHER_YEARS
 
 WINDOW_LEN = N_YEARS + SPINUP  # 8
 

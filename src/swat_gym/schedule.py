@@ -5,7 +5,7 @@ date order and concatenated. Irrigation is parameterised (decision tables crash 
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 CROPS = ("corn", "barl", "alfa")

@@ -1,7 +1,6 @@
 """Parameter table writes — especially integer columns that gfortran mis-reads as floats."""
 from __future__ import annotations
 
-from pathlib import Path
 
 from swat_gym.fastrunner import TXTINOUT
 from swat_gym.params import get_value, set_value

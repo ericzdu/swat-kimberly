@@ -8,146 +8,51 @@ noise floor, skip PPO.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
-import time
 from pathlib import Path
 
-import numpy as np
-
-from ..fastrunner import FastRunner
-from ..monthly import (MONTHLY_I_DIM, default_monthly_i_free, evaluate_monthly_i)
+from ..plan import default_x
 from ..rewarders import average
-from ..windows import TRAIN_YEARS, TEST_YEARS, assert_no_leakage
-from ._focused import ROOT, _row, mean, paired
-from ._optimize import minimise
+from ..windows import TEST_YEARS, TRAIN_YEARS
+from .common import RUNS, mean, minimise, neg_mean_profit, paired, score
 
-#: Noise floor from prior cadence/N sweeps — foresight value must clear this to justify PPO.
 NOISE_FLOOR = 250.0
-
-OUT = ROOT / "runs" / "exp1_ceiling.json"
-
-
-def _score_shared(x, windows, prices, no3_price, max_n):
-    with FastRunner() as runner:
-        return [_row(evaluate_monthly_i(x, runner, prices=prices, start_year=sy,
-                                        no3_price=no3_price, max_n=max_n), sy)
-                for sy in windows]
 
 
 def main(argv=None) -> dict:
-    assert_no_leakage()
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--budget", type=int, default=5_000,
-                    help="engine runs for the shared schedule (split across train windows)")
-    ap.add_argument("--per-window-budget", type=int, default=2_000,
-                    help="engine runs per oracle (single-window) optimisation")
+    ap.add_argument("--budget", type=int, default=5_000, help="engine runs, shared schedule")
+    ap.add_argument("--per-window-budget", type=int, default=2_000, help="evals per oracle")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--out", type=Path, default=RUNS / "exp1_ceiling.json")
     args = ap.parse_args(argv)
 
-    prices = average()
-    # Must match the policy path's cap so foresight is comparable to the PPO rows.
-    max_n = None
-    train = list(TRAIN_YEARS)
-    test = list(TEST_YEARS)
-    x0 = default_monthly_i_free()
-    t0 = time.time()
+    prices, train, test = average(), list(TRAIN_YEARS), list(TEST_YEARS)
+    obj = functools.partial(neg_mean_profit, lever="I", prices=prices, no3_price=0.0)
 
-    # Shared schedule: one plan, mean profit over all training windows.
-    evals_shared = max(1, args.budget // len(train))
-    print(f"shared schedule: {evals_shared} CMA evals × {len(train)} windows", flush=True)
+    shared_x, n_shared, _ = minimise(functools.partial(obj, windows=train), default_x("I"),
+                                     evals=args.budget // len(train), seed=args.seed,
+                                     workers=args.workers, label="shared")
+    shared_test = score("I", shared_x, test, prices, 0.0)
 
-    with FastRunner() as runner:
-        def shared_obj(free):
-            total = 0.0
-            for sy in train:
-                try:
-                    total += evaluate_monthly_i(free, runner, prices=prices,
-                                                start_year=sy,
-                                                max_n=max_n)["profit"]
-                except Exception:
-                    return 1e9
-            return -total / len(train)
-
-        shared_x, n_shared, hist_shared = minimise(
-            shared_obj, x0, evals=evals_shared, seed=args.seed)
-
-    shared_train = _score_shared(shared_x, train, prices, 0.0, max_n)
-    shared_test = _score_shared(shared_x, test, prices, 0.0, max_n)
-    print(f"  shared train {mean(shared_train):.0f}  test {mean(shared_test):.0f}", flush=True)
-
-    # Oracle: separate schedule per train window, then also per test window for the ceiling.
-    oracles = {}
-    evals_pw = max(1, args.per_window_budget)
-    print(f"per-window oracles: {evals_pw} evals each", flush=True)
-    with FastRunner() as runner:
-        for sy in train + test:
-            def obj(free, sy=sy):
-                try:
-                    return -evaluate_monthly_i(free, runner, prices=prices,
-                                               start_year=sy,
-                                               max_n=max_n)["profit"]
-                except Exception:
-                    return 1e9
-            x, n, hist = minimise(obj, x0, evals=evals_pw, seed=args.seed + sy)
-            d = evaluate_monthly_i(x, runner, prices=prices, start_year=sy,
-                                   max_n=max_n)
-            oracles[sy] = {"x": list(map(float, x)), "n_evals": n,
-                           "profit": d["profit"], "irrigation_mm": d["irrigation_mm"],
-                           "history": hist}
-            print(f"  oracle {sy}: {d['profit']:.0f} $/ha", flush=True)
-
-    oracle_train = [_row({"profit": oracles[sy]["profit"],
-                          "revenue": 0, "water_cost": 0, "manure_cost": 0,
-                          "fert_cost": 0, "op_cost": 0, "n_fert_events": 0,
-                          "irrigation_mm": oracles[sy]["irrigation_mm"],
-                          "manure_mg": 0, "fert_n_kg": 0, "no3_leached_kg": 0}, sy)
-                    for sy in train]
-    # Re-score oracles properly for cost decomposition on test.
     oracle_test = []
-    with FastRunner() as runner:
-        for sy in test:
-            d = evaluate_monthly_i(oracles[sy]["x"], runner, prices=prices,
-                                   start_year=sy, max_n=max_n)
-            oracle_test.append(_row(d, sy))
+    for sy in test:
+        x, _, _ = minimise(functools.partial(obj, windows=[sy]), default_x("I"),
+                           evals=args.per_window_budget, seed=args.seed + sy,
+                           workers=args.workers, label=f"oracle {sy}")
+        oracle_test += score("I", x, [sy], prices, 0.0)
 
-    # Also score train oracles with full _row for paired comparison.
-    oracle_train = []
-    with FastRunner() as runner:
-        for sy in train:
-            d = evaluate_monthly_i(oracles[sy]["x"], runner, prices=prices,
-                                   start_year=sy, max_n=max_n)
-            oracle_train.append(_row(d, sy))
-
-    foresight_train = mean(oracle_train) - mean(shared_train)
-    foresight_test = mean(oracle_test) - mean(shared_test)
-    gate_pass = foresight_test > NOISE_FLOOR
-
-    summary = {
-        "train_years": train, "test_years": test,
-        "noise_floor": NOISE_FLOOR,
-        "shared": {"x": list(map(float, shared_x)), "n_evals": n_shared,
-                   "history": hist_shared,
-                   "train": mean(shared_train), "test": mean(shared_test)},
-        "oracle": {"train": mean(oracle_train), "test": mean(oracle_test),
-                   "per_window": {str(k): {"profit": v["profit"], "n_evals": v["n_evals"]}
-                                  for k, v in oracles.items()}},
-        "foresight_train": foresight_train,
-        "foresight_test": foresight_test,
-        "paired_test": paired(oracle_test, shared_test),
-        "gate_pass": gate_pass,
-        "gate_note": (
-            f"foresight {foresight_test:+.0f} $/ha "
-            f"{'exceeds' if gate_pass else 'inside'} noise floor {NOISE_FLOOR:.0f} — "
-            f"{'proceed to PPO' if gate_pass else 'skip cluster PPO; write bounded null'}"
-        ),
-        "seconds": round(time.time() - t0, 1),
-    }
+    foresight = mean(oracle_test) - mean(shared_test)
+    summary = {"test_years": test, "noise_floor": NOISE_FLOOR, "prices": prices.label,
+               "shared_x": list(map(float, shared_x)), "shared_test": mean(shared_test),
+               "oracle_test": mean(oracle_test), "foresight_test": foresight,
+               "paired_test": paired(oracle_test, shared_test),
+               "gate_pass": bool(foresight > NOISE_FLOOR)}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(summary, indent=2))
-    print(f"\nforesight train {foresight_train:+.0f}  test {foresight_test:+.0f} $/ha")
-    print(summary["gate_note"])
-    print(f"-> {args.out}")
+    print(f"foresight {foresight:+.0f} $/ha  gate_pass={summary['gate_pass']}  -> {args.out}")
     return summary
 
 

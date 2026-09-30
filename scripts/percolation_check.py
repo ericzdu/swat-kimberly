@@ -13,9 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
-from swat_gym.env import N_YEARS, SPINUP, time_sim
 from swat_gym.fastrunner import FastRunner
-from swat_gym.monthly import default_monthly_i_free, evaluate_monthly_i
+from swat_gym.plan import N_YEARS, SPINUP, default_x, evaluate, time_sim
 from swat_gym.rewarders import average, profit
 from swat_gym.windows import TEST_YEARS
 
@@ -79,11 +78,10 @@ def main() -> dict:
             rows.append({**_summarise("measured", r, prices), "start_year": sy})
 
     # F2: percolation vs applied water.
-    base = default_monthly_i_free()
+    base = default_x("I")
     with FastRunner() as r:
         for scale in (0.6, 0.8, 1.0, 1.2, 1.4, 1.6):
-            x = np.clip(base * scale, 0.0, 1.0)
-            evaluate_monthly_i(x, r, prices=prices, start_year=2013, max_n=None)
+            evaluate("I", np.clip(base * scale, 0.0, 1.0), r, prices=prices, start_year=2013)
             rows.append({**_summarise(f"default x{scale:g}", r, prices),
                          "start_year": 2013, "scale": scale})
 
