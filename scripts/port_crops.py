@@ -1,15 +1,6 @@
-"""Port the site's calibrated SWAT crop parameters into plants.plt.
+"""Port workbook crop params (data/crop_params_swat.csv) into plants.plt for corn/barl/alfa.
 
-**Source: `~/Documents/Kimberly, Idaho/Crop Parameters and Plant Harvest dates.xlsx`**, sheet
-`SWAT Crop Parameters`, extracted to `data/crop_params_swat.csv`. This is the site's own
-calibrated table. An earlier version read the same numbers out of RuFaS's crop configuration,
-which merely re-exported them; the primary table is used because it is the primary source, and
-because it also carries the stock SWAT defaults beside the calibrated values (corn BIO_E 39.0
-default vs 50.0 calibrated here) — a plausibility anchor when bounding a fit.
-
-Overrides the mapped columns for SWAT+ corn / barl / alfa, leaving all other plants.plt
-columns at their SWAT+ defaults. Column order per the plants.plt header (0-indexed within
-whitespace tokens).
+COLMAP keys are 0-based whitespace token indices. Unmapped columns keep SWAT+ defaults.
 """
 from __future__ import annotations
 
@@ -48,11 +39,6 @@ COLMAP = {
     24: ("BP2", 1.0),            # frac_p_50
     25: ("BP3", 1.0),            # frac_p_mat
     26: ("WSYF", 1.0),           # harv_idx_ws
-    # Everything below index 26 was previously left at the SWAT+ template default. Where the
-    # template happened to agree with the site table that was invisible; where it did not, the
-    # model silently ran the *stock* value while the calibrated one sat unused in the sheet —
-    # barley GSI 0.008 against a calibrated 0.002 (4x), corn USLE_C 0.14 against 0.20, and
-    # RSDCO_PL 0.05 against 0.01 for both corn and alfalfa.
     14: ("CHTMX", 1.0),          # can_ht_max
     27: ("USLE_C", 1.0),         # usle_c_min
     28: ("GSI", 1.0),            # stcon_max   maximum stomatal conductance
@@ -66,100 +52,16 @@ COLMAP = {
     42: ("BM_DIEOFF", 1.0),      # bm_dieoff
 }
 
-#: Sheet columns deliberately NOT ported. ``ALAI_MIN``, ``BIO_LEAF``, ``MAT_YRS`` and
-#: ``BMX_TREES`` are zero for every crop in the site table — they are unfilled placeholders,
-#: not calibrated zeros. Writing them would set alfalfa's minimum LAI and years-to-maturity to
-#: 0, which for a perennial is not a parameter choice but a broken stand. The SWAT+ template
-#: values (lai_min 2.0, yrs_mat 2.0) are kept.
+#: Unfilled (all-zero) workbook columns; not ported.
 UNFILLED = ("ALAI_MIN", "BIO_LEAF", "MAT_YRS", "BMX_TREES")
 
-#: plants.plt token 1, ``plnt_typ``, overridden for barley. **This is a bug fix, not a tuning
-#: choice, and it was the whole barley shortfall.**
-#:
-#: The site table gives barley ``IDC = 5``, which is SWAT2012 for "cold annual", and the SWAT+
-#: template accordingly carries ``cold_annual``. That classification is right in SWAT2012's
-#: sense — barley is a cool-season cereal — but SWAT+ rev 60.5.7's ``cold_annual`` pathway is
-#: built for a *fall-sown* crop that accumulates heat units before dormancy and resumes in
-#: spring. Applied to an April-sown spring barley it collapses the potential heat units: the
-#: crop reached maturity **46 days after planting** on ~530 degree-days, then stood in the field
-#: without growing for the remaining 66-85 days until harvest, with every stress term at exactly
-#: 0.000. Peak biomass was 4.5-6.2 Mg/ha against a measured 14.05-17.05 (`USDA Long-Term
-#: Manure/LT Manure Soil Properties and P uptake data.xlsx`, sheet `plant P uptake`).
-#:
-#: ``Plant Harvest Dates`` documents **1800 heat units** for Spring Barley. With the plant type
-#: corrected and *no other change* — ``days_mat`` left at the SWAT+ stock 105 — the engine
-#: realizes **1517 (2014) and 1766 (2019)**, and the growth window roughly doubles to 97 and 110
-#: days against the site's documented 124-day season. The same measurement on corn is the
-#: control: corn is already ``warm_annual`` and already realizes 1889/1888 against the same
-#: documented 1800, at its own stock ``days_mat``.
-#:
-#: ``days_mat`` is deliberately NOT adjusted. It has no value anywhere in the source table, and
-#: moving it trades heat-unit fidelity against yield fit — which is calibration, not porting.
+#: Spring barley must be warm_annual (cold_annual is for fall-sown crops and stunts it).
 PLNT_TYP = {"barl": "warm_annual"}
 
-#: Deviations from the site's calibrated column, applied *after* ``COLMAP``.
-#:
-#: Each entry is ``(row, column) -> (value, justification)``. Two of the four are source-backed
-#: -- they take the workbook's own ``DEFAULT`` block instead of its calibrated block -- and two
-#: are **fits**, labelled as such so they are never mistaken for measurements. Full derivation
-#: in ``runs/growth_diagnosis.md``.
+#: (row, column) -> (value, justification), applied after COLMAP.
 OVERRIDES: dict[tuple[str, str], tuple[float, str]] = {
-    # -- source-backed: the workbook's DEFAULT block ------------------------------------
-    # The site's calibrated canopy-development curve (FRGRW1 0.10 / LAIMX1 0.01 / FRGRW2 0.80)
-    # was fitted inside SWAT2012. Applied in SWAT+ it delays canopy closure to about jday 210
-    # for corn planted 17 May, costing ~15 PBIAS points. Curve *shape* is engine-specific in a
-    # way BIO_E is not, so the same workbook's DEFAULT values are the better prior here.
-    # REMOVED 2026-08-07 (CLAUDE.md rule 11b): corn's frac_hu1 0.15 / lai_max1 0.05 /
-    # frac_hu2 0.50, taken from the workbook's DEFAULT block on the argument that his
-    # calibrated 0.10 / 0.01 / 0.80 was SWAT2012-fitted and cost ~15 PBIAS points here. That
-    # is a real rev-62 concern (rule 12) but it is *his* curve to change, not ours, and the
-    # cost is already included in the 37.1 % mean |PBIAS| measured on his exact values.
-    # Raise it with him rather than substituting a different block of his own workbook.
-
-    # -- fits, not source values ---------------------------------------------------------
-    # plant.ini declares a three-plant community, so alfalfa's minimum LAI is imposed on the
-    # HRU in *every* year -- year-round, with zero standing biomass, including corn and barley
-    # years and including 2013-14 before the stand is ever planted. At ext_co 0.65 a floor of
-    # 2.0 intercepts 73 % of PAR and produces nothing.
-    #
-    # **This is a trade-off point, not a "lower is better" knob**, and the trade is against the
-    # *water balance*. Dropping it far (0.1) maximises the yield recovery but the annual crops
-    # then transpire the entire water input: ET rises 670 -> 785 mm/yr and deep percolation
-    # falls 69 -> **0**, taking `basin_aqu_yr.no3_rchg` -- the leaching externality the Exp 1
-    # reward reads -- to exactly zero with it. 1.75 keeps most of the yield gain, is *better*
-    # on both annuals than 0.1, and leaves 32 mm/yr of drainage so the leaching term stays
-    # alive. Measured at alfa.bm_e 10.0:
-    #
-    #   lai_min  corn    barl    alfa    perc   no3_rchg
-    #   0.10    -31.4   -20.3    +5.8     0.0     0.00
-    #   1.50    -25.8   -16.9    -0.4    20.4     0.94
-    #   1.75    -24.7   -17.9    +0.5    32.3     1.56   <- shipped (rev 60.5.7)
-    #   2.00    -23.6   -33.3    +1.8    46.4     4.09
-    #
-    # Under rev 62.0.0 the resident-perennial PAR-theft pathway is largely gone (plant-community
-    # fix), so sweeping lai_min no longer moves ET/perc. Drainage was briefly "restored" via
-    # hydrology.hyd ``pet_co`` 0.81, which turned out to cost 16 % PET bias against measured
-    # ETos and to be treating a symptom; ``pet_co`` is now calibrated to 0.964 and the drainage
-    # collapse is an open engine-difference finding — PROVENANCE §5h, OPEN_ITEMS #11.
-    #
-    # **Ownership, re-settled 2026-09-10: this table owns it outright.** It was shared with
-    # ``calibrate/optimize.py:PARAMS`` (the two silently fought — any ``port_crops.py`` run
-    # after an ``optimize.py --apply`` reverted the fitted value without saying so), and the
-    # constant was carrying 1.01216, the last applied fit. That fit was run against the
-    # pre-rule-11b crop coefficients and is an orphan of it.
-    #
-    # Measured 2026-09-10 on the workbook crops: moving ``lai_min`` 1.01216 -> 1.75 changes
-    # the calibration score by **zero to five significant figures**, and a free refit parks it
-    # at 0.4501 for the same zero. Under rev 62 the resident-perennial PAR-theft pathway it
-    # used to act through is gone (plant-community fix, see the sweep above), so it is now an
-    # **inert dimension** — exactly the ``corn.harv_idx`` failure PROVENANCE §5j documents, a
-    # parameter parked at a value that reads as tuned and is noise. It is therefore dropped
-    # from ``PARAMS`` and pinned here at the sourced 1.75, which is the value the rest of the
-    # model was built around. ``scripts/check_param_state.py`` asserts it.
+    # Inert under rev 62; owned here only (not optimize.PARAMS). Asserted by check_param_state.
     ("alfa", "lai_min"): (1.75, "sourced; inert under rev 62 — dropped from PARAMS 2026-09-10"),
-    # REMOVED 2026-08-07 (CLAUDE.md rule 11b): ("alfa", "bm_e") -> 10.0. Its own rationale
-    # said the quiet part out loud -- "it is absorbing the over-prediction, not measuring
-    # radiation-use efficiency" -- which is exactly why it goes. The workbook's 17.0 stands.
 }
 
 
@@ -191,8 +93,7 @@ def main() -> None:
 
     (TIO / "plants.plt").write_text("".join(lines))
 
-    # Applied by column *name* rather than token index: these are columns SWAT+ has and the
-    # SWAT2012 source table does not, so COLMAP has no entry to reuse.
+    # By column name: SWAT+-only columns not in COLMAP.
     text = (TIO / "plants.plt").read_text()
     for (row, column), (value, why) in OVERRIDES.items():
         text = set_value(text, "plants.plt", row, column, value)

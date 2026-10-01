@@ -1,25 +1,9 @@
-"""Build the GRACEnet rotation management for the Kimberly SWAT+ HRU.
+"""Build the GRACEnet rotation management (dates/HI from the ArcSWAT reference; irrigation from
+data/irrigation_gracenet.csv).
 
-Irrigation: ``data/irrigation_gracenet.csv``, extracted from the GRACEnet primary workbooks.
-
-**Operation dates, harvest indices and fertiliser timing follow the calibrated ArcSWAT
-reference model** (`TxtInOut-2/000140001.mgt`, HRU 119 / subbasin 14 — the same field).
-Earlier versions applied each manure on the planting date and used the generic SWAT+
-`silage` / `hay_cut_high` harvest types; the reference applies every manure on **April 10**
-regardless of planting, and overrides the harvest index per crop.
-
-Writes: management.sch (rotation: plant / harvest / kill / fertilize / 158 measured daily
-irrigation events), plant.ini (community of the rotation crops), appends measured GRACEnet
-manures to fertilizer.frt, per-crop harvest types to harv.ops, per-event amounts to irr.ops,
-and points landuse.lum at the new schedule + community.
-
-SWAT+ processes schedule ops in listed order; a year rolls over when the next op's
-day-of-year is earlier than the previous op's — so we emit ALL ops sorted by (year, doy).
-Crops map corn_silage->corn, barley/triticale_silage->barl, alfalfa->alfa.
-
-**The simulation runs 2012-2019**: a 2012 barley spin-up plus the seven measured rotation
-years. The reference model stretched its 8-year rotation over a 9-year run by repeating 2012's
-operations in 2020; that fabricated year is dropped here. See ``SIM_END_YEAR``.
+Writes management.sch, plant.ini, fertilizer.frt/harv.ops/irr.ops entries, landuse.lum.
+Ops sorted by (year, doy); SWAT+ rolls the year on a date wrap. Simulation is 2012 spin-up +
+2013-2019.
 """
 from __future__ import annotations
 
@@ -30,39 +14,22 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 TIO = ROOT / "model" / "TxtInOut"
-# Irrigation comes from the GRACEnet primary records (see scripts/extract_primary.py), not
-# from RuFaS's re-export. The two agree to 0.1 mm in every year and on all 158 events; the
-# primary source is used because it is the primary source.
+# From extract_primary.py.
 IRR_CSV = ROOT / "data" / "irrigation_gracenet.csv"
 
 COMM, SCHED, LUM = "kimb_comm", "kimb_rot", "alfa_lum"
 
-# --- harvest types ----------------------------------------------------------------------
-# The reference overrides the harvest index per crop (HI_OVR) at efficiency 1.0 with no
-# minimum-biomass floor. The stock SWAT+ types differ materially: `silage` is 0.90 HI at
-# 0.95 efficiency, `hay_cut_high` is 0.80 HI with a 3000 kg/ha floor that suppresses cuts.
-# HI_OVR and HARV_EFF both come from the site's own crop table
-# (`Crop Parameters and Plant Harvest dates.xlsx`, sheet `SWAT Crop Parameters`), which gives
-# HI_OVR 1.0 for all three and HARV_EFF 0.95 / 0.98 / **0.54**. Barley previously carried 0.52,
-# which is the sheet's *HVSTI* rather than its HARV_EFF — the two columns were conflated.
+# Harvest ops: harv_idx = workbook HARV_EFF, eff 1.0, no biomass floor.
 HARVEST = {          # name -> (harv_idx, harv_eff, harv_bm_min)
     "gn_corn": (0.98, 1.0, 0.0),
     "gn_barl": (0.54, 1.0, 0.0),
     "gn_alfa": (0.95, 1.0, 0.0),
 }
 
-# --- tillage ----------------------------------------------------------------------------
-# Bierer et al. 2022 section 2.3: "Manure was immediately incorporated through disking to a
-# 15-cm depth to minimize ammonia volatilization and P runoff losses." The model had **zero**
-# tillage operations across the whole rotation and applied every manure as a surface broadcast
-# at 99 % ammoniacal N — the maximum-volatilisation configuration, and the opposite of what
-# was done in the field. A disk pass on each manure date incorporates it.
+# Manure disked in on the application date (as in the field).
 TILLAGE = {"gn_disk": (0.85, 150.0, 30.0)}   # name -> (mix_eff, mix_dp mm, rough)
 
-# --- measured GRACEnet manures: name -> (rate kg/ha, min_n, min_p, org_n, org_p) ---------
-# Rates and concentrations are the measured GRACEnet compositions. The reference expresses
-# the same applications as rate/10 with concentration x10 (algebraically identical N and P)
-# and rounds its fert.dat to 3 decimals; ours keep full precision.
+# Measured GRACEnet manures: name -> (rate kg/ha, min_n, min_p, org_n, org_p).
 MANURES = {
     "gn2013": (43800, 0.00260, 0.004655, 0.01040, 0.000245),
     "gn2014": (48000, 0.00390, 0.006650, 0.01560, 0.000350),
@@ -71,24 +38,8 @@ MANURES = {
 }
 NH3_FRAC = 0.99   # reference fert.dat FNH3N; the template default is 1.0
 
-# The reference applied Elem-N 350 / Elem-P 320 kg/ha on 3/15 in both spin-up years. That was
-# a device to charge a profile initialised to zero nitrate, and it has no counterpart in the
-# source record: `GraceNet Data Summary2.xlsx::Fert App` begins in 2013, and Bierer et al. 2022
-# Table 1 shows the spring-manure plot received nothing in 2012 (the Fall 2012 entries belong
-# to the fall-manure and fall-compost treatments, which are different plots). The profile is
-# now initialised from the measured April-2013 soil N and P instead (see port_nutrients.py),
-# so the synthetic charge is dropped rather than carried forward.
-
-# --- rotation ---------------------------------------------------------------------------
-# (op, year, month, day, op_data1, op_data2). Dates verbatim from the reference schedule.
-#
-# The reference terminates a crop with `harvonly` followed by `kill` the next day. SWAT+
-# rev 60.5.7 **silently ignores a standalone `kill` op** — it never reaches mgt_out.txt and
-# the plant keeps growing, which made the 2017 alfalfa stand survive into 2018 (the corn
-# planting logged PLANT_ALREADY_GROWING and "corn" harvested 155 t/ha of runaway alfalfa).
-# `hvkl` on the harvest date is SWAT+'s combined harvest-and-kill and is the correct
-# equivalent; plain `harv` is used only for the intermediate alfalfa cuts, where the stand
-# is meant to survive.
+# (op, year, month, day, op_data1, op_data2). Use hvkl to end a crop (standalone kill is
+# ignored); harv only for intermediate alfalfa cuts.
 SPINUP_OPS = [
     ("plnt", 4, 1, "barl", "null"),
     ("hvkl", 8, 10, "barl", "gn_barl"),
@@ -130,22 +81,7 @@ CROP_OPS = [
 
 SPINUP_YEARS = (2012,)
 
-#: The simulation ends at 2019, not 2020.
-#:
-#: 2020 was a fabricated year. The reference model runs an 8-year rotation over a 9-year
-#: simulation, so 2020 simply repeated 2012's barley operations — and because
-#: ``build_ops`` filtered irrigation to 2019, it repeated them with **zero irrigation**, in a
-#: year when 757.7 mm was actually applied (``GRACEnet Irrigation 2020-2022.xlsx::2020``,
-#: 26 events, 22 Apr - 11 Oct). Simulated 2020 ET came out at 250 mm against 421-1013 mm in
-#: every other year, and ``print.prt`` skips only the 2012 spin-up, so that year was being
-#: **scored**.
-#:
-#: Wiring the measured water in would not fix it: the 2020 water was applied to a crop
-#: harvested in October, which is not the August-harvested barley the rotation assumes, and no
-#: 2020 yield was measured. Rather than choose between a fabricated crop and a fabricated
-#: water balance, the year is dropped. What remains is 2012 spin-up plus **2013-2019, all
-#: seven of which have a measured yield**. The 2020 irrigation stays in
-#: ``data/irrigation_gracenet.csv`` so it is available if the crop is ever identified.
+#: Last simulated year (2020 crop unknown, no measured yield).
 SIM_END_YEAR = 2019
 
 
@@ -168,8 +104,7 @@ def build_ops() -> list[tuple]:
 
     for op, yr, mon, day, d1, d2 in rotation:
         d3 = MANURES[d1][0] if op == "fert" else 0.0
-        # NOTE: op_data3 on `plnt` is NOT heat units (large values segfault the engine);
-        # SWAT+ derives heat units from plants.plt `days_mat` plus climate.
+        # op_data3 on plnt is not heat units (large values segfault).
         ops.append((yr, doy(yr, mon, day), (op, mon, day, 0.0, d1, d2, float(d3))))
 
     # measured daily irrigation -> one irrm op per event, referencing an irr.ops entry.
@@ -197,18 +132,7 @@ def write_management(ops: list[tuple]) -> None:
     print(f"management.sch: {len(ops)} ops")
 
 
-#: ``yrs_init`` -- years of growth the stand already has at simulation start.
-#:
-#: This was 1.0 for every plant, which is wrong for alfalfa: the stand is not planted until
-#: 2015-04-16, so declaring it a year old on 2012-01-01 makes SWAT+ carry an established
-#: perennial through the 2013 corn and 2014 barley years. Setting it to **0** moves 2013 corn
-#: from 12.63 to 18.03 t/ha (measured 22.10) and leaves the alfalfa years essentially unchanged
-#: (2016: 24.63 -> 23.96). See ``runs/growth_diagnosis.md`` section 7.
-#:
-#: It does **not** fix the whole problem. A perennial in the community competes for light and
-#: nitrogen in every year regardless, and rev 60.5.7 offers no way to end that residency --
-#: ``kill`` after ``hvkl`` is silently ignored, there is no ``lu_change`` decision-table action,
-#: and there is no ``lum.upd`` slot in ``file.cio``. That is why 2018-19 stay depressed.
+#: yrs_init at sim start. Alfalfa 0 (not planted until 2015).
 YRS_INIT = {"corn": 1.0, "barl": 1.0, "alfa": 0.0}
 
 
@@ -263,14 +187,7 @@ def append_tillage_ops() -> None:
 
 
 def set_time_sim() -> None:
-    """Set the simulation window to SPINUP..SIM_END_YEAR (see SIM_END_YEAR for why 2019).
-
-    The a10 template ships ``time.sim`` at 2018-2025. Setting it used to be a side effect of
-    the now-retired ``port_weather.py``; when that script was dropped from ``build_model.sh``
-    nothing took the job over, so a clean rebuild silently produced a model whose simulation
-    window did not overlap its own weather record. Owning it here makes the window explicit
-    and keeps it beside the schedule that has to fit inside it.
-    """
+    """Set time.sim to SPINUP..SIM_END_YEAR."""
     path = TIO / "time.sim"
     lines = path.read_text().splitlines()
     toks = lines[2].split()

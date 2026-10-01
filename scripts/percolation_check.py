@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
-"""Is the percolation pathway usable as a leaching signal? (OPEN_ITEMS #11, PROVENANCE 5h)
+"""Is percolation usable as a leaching signal? (OPEN_ITEMS #11)
 
-Both of those records predate the nitrogen refit and are stale: 5h reports `no3_rchg` at
-0.02 kg/ha/yr, while the current measured-practice run gives ~0.49. This re-measures.
-
-F1  Water and nitrogen balance at measured practice under the current calibration.
-F2  Per-strategy closure, plus the **implied leachate concentration** (kg N / percolation mm).
-    That is the diagnostic that matters: leaching and percolation must be consistent with a
-    physically possible concentration. Above ~50 mg/L the two pathways disagree and the
-    leaching column cannot carry a frontier.
+F1  Water/N balance at measured practice.
+F2  Percolation response to applied water, and implied leachate mg/L (>~50 = implausible).
 
     uv run python scripts/percolation_check.py
 """
@@ -19,9 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
-from swat_gym.env import N_YEARS, SPINUP, time_sim
 from swat_gym.fastrunner import FastRunner
-from swat_gym.monthly import default_monthly_i_free, evaluate_monthly_i
+from swat_gym.plan import N_YEARS, SPINUP, default_x, evaluate, time_sim
 from swat_gym.rewarders import average, profit
 from swat_gym.windows import TEST_YEARS
 
@@ -54,9 +47,7 @@ def _summarise(tag: str, runner, prices) -> dict:
     w = _wb(runner)
     perc_total = w.get("perc", 0.0) * N_YEARS
     no3 = d["no3_leached_kg"]
-    # Concentration is only defined where water actually moves. With no percolation and no
-    # nitrate the ratio is 0/0 -- undefined, not implausible; scoring it as infinite would
-    # condemn the pathway for behaving correctly in a year that drained nothing.
+    # Undefined (None) when nothing drains.
     conc = (no3 / perc_total * MG_L_PER_KG_PER_MM) if perc_total > 1.0 else None
     row = {
         "strategy": tag,
@@ -86,14 +77,11 @@ def main() -> dict:
             r.run({"time.sim": time_sim(sy, N_YEARS + SPINUP)})
             rows.append({**_summarise("measured", r, prices), "start_year": sy})
 
-    # F2 -- response of percolation to applied water. If percolation only responds once
-    # irrigation exceeds ET demand, the low-water baseline being near zero is correct
-    # behaviour rather than a broken pathway.
-    base = default_monthly_i_free()
+    # F2: percolation vs applied water.
+    base = default_x("I")
     with FastRunner() as r:
         for scale in (0.6, 0.8, 1.0, 1.2, 1.4, 1.6):
-            x = np.clip(base * scale, 0.0, 1.0)
-            evaluate_monthly_i(x, r, prices=prices, start_year=2013, max_n=None)
+            evaluate("I", np.clip(base * scale, 0.0, 1.0), r, prices=prices, start_year=2013)
             rows.append({**_summarise(f"default x{scale:g}", r, prices),
                          "start_year": 2013, "scale": scale})
 
@@ -114,8 +102,6 @@ def main() -> dict:
     verdict = {
         "max_implied_mg_L": max(conc) if conc else None,
         "n_rows_with_drainage": len(conc),
-        # The physical question: does percolation switch on once irrigation exceeds ET
-        # demand, rather than being inert at all application rates?
         "perc_responds_to_water": (
             (scaled[-1]["perc_mm_yr"] or 0) > 20.0 and len(draining) >= 2
             if scaled else None),

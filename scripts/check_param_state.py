@@ -1,28 +1,8 @@
 #!/usr/bin/env python3
-"""Is the model on disk the model the documentation describes? Exits non-zero if not.
+"""Check model params on disk match ownership rules (rule 11b). Exits non-zero on drift.
 
-Two scripts write crop parameters and they used to fight silently. ``port_crops.py`` applies the
-collaborator's workbook (CLAUDE.md rule 11b) and ``calibrate/optimize.py --apply`` applies the
-fit; whichever ran last won, and nothing recorded which that was. The result, found 2026-08-28,
-was a model in a state matching neither: barley and alfalfa carried workbook values while corn
-still carried its fitted ``bm_e = 64.5`` and ``lai_pot = 4.95`` — the exact value rule 11b names
-as the one that must not stand — plus three canopy-curve overrides that were retired in the code
-comments and never undone in the file. Nobody noticed because every number involved is plausible.
-
-The ownership boundary this enforces:
-
-* **Workbook-owned** (rule 11b) — every column in :data:`port_crops.COLMAP` for corn, barley and
-  alfalfa, and the ``gn_*`` harvest indices in ``harv.ops``, which must equal the workbook's
-  ``HARV_EFF``. These are the collaborator's agronomy. The optimizer must never move them, and
-  they are already absent from ``calibrate/optimize.py:PARAMS``.
-* **Optimizer-owned** — the parameters in that ``PARAMS`` list, which have no workbook value.
-  Their values are *reported*, not asserted: there is no source of truth for them other than the
-  last fit, and pinning them here would just move the conflict.
-* **Shared, and therefore the dangerous one** — ``alfa.lai_min`` was optimizer-owned *and*
-  written by ``port_crops.OVERRIDES``, and the two silently fought. Settled 2026-09-10: it is
-  inert under rev 62 (1.01216 -> 1.75 moves the calibration score by zero to five significant
-  figures), so it was dropped from ``PARAMS`` and pinned in ``OVERRIDES`` at the sourced 1.75.
-  It is now asserted, not reported. Any future shared parameter must be resolved the same way.
+Workbook-owned (port_crops.COLMAP + gn_* HARV_EFF): asserted. Optimizer-owned (optimize.PARAMS):
+reported. Shared params are not allowed; pin them in OVERRIDES and assert.
 
     uv run python scripts/check_param_state.py
 """
@@ -88,18 +68,12 @@ def shared_drift() -> list[tuple[str, str, float, float]]:
 
 
 def integer_columns_intact() -> list[str]:
-    """``days_mat``/``yrs_mat`` must stay integer tokens under rev 62's list-directed read.
-
-    Written as ``120.00000`` they mis-parse and shift every later column on the row, producing
-    fake temperature stress and ~3.5 t/ha corn while the run completes normally.
-    """
+    """days_mat/yrs_mat must be integer tokens (else the row mis-parses silently)."""
     txt = (TIO / "plants.plt").read_text()
     bad = []
     for plt in CROP_MAP.values():
         line = next(l for l in txt.splitlines() if l.split()[:1] == [plt])
-        # Indices are into the split data row, which aligns with the header row token for
-        # token. Read them from the header rather than hard-coding a guess: 13 is not
-        # ``yrs_mat`` (37 is), and the wrong index reports three false failures.
+        # Column indices from the header, not hard-coded.
         header = txt.splitlines()[1].split()
         for idx, name in ((header.index("days_mat"), "days_mat"),
                           (header.index("yrs_mat"), "yrs_mat")):
@@ -139,8 +113,6 @@ def main() -> None:
     # Reported, never asserted: no source of truth beyond the last fit.
     txt = (TIO / "plants.plt").read_text()
     print("\noptimizer-owned (reported, not checked):")
-    # ``alfa.lai_min`` is no longer listed here: it was dropped from PARAMS 2026-09-10 as inert
-    # and pinned in OVERRIDES, so ``shared_drift`` above now *asserts* it rather than reporting.
     for row, col in (("corn", "days_mat"), ("barl", "days_mat")):
         print(f"  {row}.{col:<10} = {get_value(txt, 'plants.plt', row, col)}")
     for f, row, col in (("hydrology.hyd", "hyd1", "epco"), ("hydrology.hyd", "hyd1", "pet_co"),

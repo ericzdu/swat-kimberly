@@ -7,10 +7,7 @@ TEMPLATE="$HOME/Downloads/a10_single_hru/Scenarios/Default/TxtInOut"
 TIO="$ROOT/model/TxtInOut"
 
 echo "== reset TxtInOut from template =="
-# The engines live inside TxtInOut and the reset wipes it, so rescue them first. Both OS
-# families are kept; find_engine picks the native one and ignores the wrong-OS sibling.
-# Rev 62.0.0 is current -- the retired 60.5.7 (and its .bak) are deliberately dropped, so a
-# rebuilt tree cannot silently fall back to the engine the model is no longer calibrated for.
+# Save the rev 62 engines (Mac + Linux) before wiping TxtInOut.
 ENGINES="$(mktemp -d)"
 trap 'rm -rf "$ENGINES"' EXIT
 for e in swatplus_rev62.0.0 swatplus_62.0.0.linux; do

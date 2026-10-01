@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""Generate markdown + PNG tables for PAPER.md / Google Docs.
+"""Generate markdown + PNG result tables from runs/*.json.
 
-Usage::
+    uv run python scripts/paper_tables.py [--out runs/paper_tables]
 
-    uv run python scripts/paper_tables.py
-    uv run python scripts/paper_tables.py --out runs/paper_tables
-
-Writes ``table_*.md``, ``all_tables.md``, and ``table_*.png``.
-PPO / frozen rows stay as em-dashes until ``runs/exp1_irrigation.json`` exists.
+Needs runs/exp1_{irrigation,ceiling,controller}.json; PPO rows stay blank until PPO has run.
 """
 from __future__ import annotations
 
@@ -47,13 +43,7 @@ def _fmt(x: float | None, digits: int = 0) -> str:
 
 
 def _paired(p: dict) -> str:
-    """``mean ± se`` where the s.e. is the ESS one — the only one rule 7 permits in the paper.
-
-    Held-out windows overlap by up to seven of their eight years, so ``se_naive`` (kept in the
-    artefact for comparison) claims about twice the precision the split bought. Reading
-    ``p["se"]`` raises ``KeyError`` on purpose: any artefact still carrying that key predates
-    the fix and its intervals must not be published.
-    """
+    """mean ± se_ess (rule 7)."""
     return f"{p['mean']:+,.0f} ± {p['se_ess']:,.0f}"
 
 
@@ -242,15 +232,13 @@ def data_yield():
 
 def data_exp1_profit() -> tuple[str, list[str], list[list[str]], str]:
     ceiling = json.loads((RUNS / "exp1_ceiling.json").read_text())
-    openloop = json.loads((RUNS / "exp1_irrigation_openloop.json").read_text())
+    full = json.loads((RUNS / "exp1_irrigation.json").read_text())
     controller = json.loads((RUNS / "exp1_controller.json").read_text())
     grower_path = RUNS / "exp1_grower_rule.json"
     grower = json.loads(grower_path.read_text()) if grower_path.is_file() else None
-    full_path = RUNS / "exp1_irrigation.json"
-    full = json.loads(full_path.read_text()) if full_path.is_file() else None
 
-    mp = openloop["mean_profit"]
-    paired = openloop["paired_test"]
+    mp = full["mean_profit"]
+    paired = full["paired_test"]
     ceil = ceiling["paired_test"]
 
     headers = ["Row", "Test profit", "vs measured", "vs default"]
@@ -284,15 +272,19 @@ def data_exp1_profit() -> tuple[str, list[str], list[list[str]], str]:
         ],
     ]
 
-    if full and "mean_profit" in full and "policy_test" in full["mean_profit"]:
-        m = full["mean_profit"]
+    if "policy_test" in mp:
+        def seeds(k):
+            vals = " / ".join(f"{v:+.0f}" for v in full[k].values())
+            ok = full["sign_consistent"][k]
+            return f"{vals}" + ("" if ok else " (signs differ: unresolvable)")
+
         rows += [
-            ["PPO policy", _fmt(m["policy_test"]), "—", "—"],
-            ["Frozen plan", _fmt(m["frozen_test"]), "—", "—"],
-            ["Policy − fixed", _fmt(full.get("advantage_over_fixed")), "", ""],
-            ["Policy − frozen (adaptivity)", _fmt(full.get("adaptivity_value")), "", ""],
+            ["PPO policy", _fmt(mp["policy_test"]), "—", "—"],
+            ["Frozen plan", _fmt(mp["frozen_test"]), "—", "—"],
+            ["Policy − fixed", _paired(paired["policy_vs_fixed"]), seeds("advantage_over_fixed"), ""],
+            ["Frozen − policy", _paired(paired["frozen_vs_policy"]), seeds("adaptivity_value"), ""],
         ]
-        note = _ess_note(paired["fixed_vs_default"])
+        note = _ess_note(paired["fixed_vs_default"]) + " Per-seed values in column 3."
     else:
         rows += [
             ["PPO policy", "—*", "—*", "—*"],
@@ -301,7 +293,7 @@ def data_exp1_profit() -> tuple[str, list[str], list[list[str]], str]:
             ["Policy − frozen (adaptivity)", "—*", "", ""],
         ]
         note = (
-            "*TODO: fill from runs/exp1_irrigation.json "
+            "*TODO: run PPO for runs/exp1_irrigation.json "
             "(3 PPO seeds; mean ± SE for advantage and adaptivity). "
             + _ess_note(paired["fixed_vs_default"])
         )

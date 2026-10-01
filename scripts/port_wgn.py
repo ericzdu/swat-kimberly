@@ -1,24 +1,6 @@
-"""Replace the a10 template's weather-generator station with the site's own.
+"""Replace the template wgn station with the reference's IDTWINFALLSWS0 (data/reference_wgn_sub14.csv).
 
-The a10 template ships a 3x3 grid of gridded wgn stations spanning 42.31-42.93 N,
-114.06-114.69 W. That grid covers this site, so the carryover was never absurd — but the
-assigned cell (``426n1144w``, 42.619/-114.375, 1145 m) is a gridded product, not the station
-the field's own calibrated model uses, and it sits 62 m below the site.
-
-This matters because ``weather-sta.cli`` sets ``hmd = sim`` and ``wnd = sim``: relative
-humidity and wind speed are **generated from this monthly climatology every day**, and both
-enter Penman-Monteith (``codes.bsn`` pet=1) directly. Precipitation, temperature and solar
-radiation are measured series, so their wgn statistics only matter for gap-filling; humidity
-and wind have no measured series behind them at all.
-
-Source: the ArcSWAT reference model's own generator for subbasin 14, station
-``IDTWINFALLSWS0`` (42.55/-114.35, 1207 m, 10 rain-years), extracted to
-``data/reference_wgn_sub14.csv``.
-
-The two formats map 1:1 except for humidity: SWAT2012 records a monthly mean **dewpoint in
-degrees C** (``DEWPT``) where the SWAT+ file this model uses carries a **relative humidity
-fraction** (``dew_ave``, 0-1 in the shipped station). Converted here with Tetens' formula at
-the month's mean air temperature, which is the same reduction SWAT makes internally.
+Dewpoint (C) -> RH fraction via Tetens at monthly mean temperature.
 """
 from __future__ import annotations
 
@@ -74,11 +56,7 @@ def render(monthly: pd.DataFrame) -> list[str]:
 
 
 def replace_station(block: list[str]) -> None:
-    """Swap the station block ``weather-sta.cli`` points at for ``block``.
-
-    The file is [title, (station, colnames, 12 rows) x N]. Only the referenced station is
-    replaced; the rest of the grid is left in place, unused and harmless.
-    """
+    """Replace only the station block weather-sta.cli references."""
     sta_path = TIO / "weather-sta.cli"
     sta_lines = sta_path.read_text().splitlines()
     current = sta_lines[2].split()[1]

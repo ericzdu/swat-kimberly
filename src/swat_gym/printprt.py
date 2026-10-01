@@ -1,13 +1,4 @@
-"""Rewriting ``print.prt`` to emit only the output tables a run actually needs.
-
-The shipped model prints daily *and* yearly *and* average-annual tables for ~every SWAT+
-object, in both ``.txt`` and ``.csv``. Writing that is a large share of the non-engine cost
-and none of it is read by the reward. Trimming is purely an I/O change: it alters which
-results are *written*, never what is *simulated*.
-
-Flag positions are edited in place, character for character, so column alignment survives
-untouched — SWAT+ reads this file positionally in places and is unforgiving about it.
-"""
+"""Trim print.prt to the needed output tables (I/O only). Flags edited in place; file is positional."""
 from __future__ import annotations
 
 import re
@@ -15,21 +6,18 @@ from collections.abc import Mapping
 
 INTERVALS = ("daily", "monthly", "yearly", "avann")
 
-#: Tables the Exp-1 reward and diagnostics read. ``basin_crop_yld_*`` is not an object row —
-#: it is governed by the ``crop_yld`` flag in the header block, which is left alone.
+#: Tables the reward and diagnostics read (crop yield is controlled by the header flag).
 GYM_OUTPUTS: dict[str, set[str]] = {
     "basin_nb": {"yearly"},              # N budget: fertn, fixn, nuptake, mineralisation
     "basin_aqu": {"yearly"},             # no3_rchg — the leaching externality
     "basin_ls": {"yearly"},              # surqno3, lat3no3, tileno3 — the soil-N loss terms
-    # Monthly water / plant-stress tables are the mid-season observation channel for the
-    # monthly-cadence env. Yearly rows stay for open-loop scoring and the annual path.
+    # Monthly for the monthly env's obs; yearly for scoring.
     "hru_wb": {"monthly", "yearly"},     # irr, et, pet, perc, sw_final
     "hru_pw": {"monthly", "yearly"},     # strsn, strsw
 }
 
 _FLAG = re.compile(r"(?<!\S)[yn](?!\S)")
-# Header value lines are not all y/n — `crop_yld` takes 'a'/'y'/'b' — so the header path
-# matches any single-character token and edits only the columns it was asked to.
+# Header flags can be any single char (crop_yld uses a/y/b).
 _ANY_FLAG = re.compile(r"(?<!\S)\S(?!\S)")
 _ROW = re.compile(r"^(\s*)(\S+)(\s+)(.*?)(\s*)$")
 
@@ -56,14 +44,7 @@ def trim(
     csvout: bool = False,
     mgtout: bool = False,
 ) -> str:
-    """Return ``print.prt`` content emitting only ``keep`` (plus the crop-yield table).
-
-    ``keep`` maps object name -> intervals to print. Objects absent from it are silenced.
-    ``csvout`` and ``mgtout`` default off: the CSV copies duplicate the ``.txt`` tables we
-    parse, and ``mgt_out.txt`` is a per-operation diagnostic log the gym never reads.
-
-    The simulation-control fields — ``nyskip``, the date range, ``crop_yld`` — are not touched.
-    """
+    """print.prt emitting only ``keep`` {object: intervals}; others silenced. Sim control untouched."""
     lines = text.splitlines()
     out: list[str] = []
     in_objects = False

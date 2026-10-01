@@ -1,10 +1,4 @@
-"""Phase-0 tests: the regression gate, and the correctness properties FastRunner claims.
-
-The fixture test is the load-bearing one. It pins this model's results to the engine that
-produced them, so that swapping in a different SWAT+ build — a Linux ELF engine on WSL, say —
-gives an immediate, diagnosable pass/fail on whether the two builds agree, rather than a
-silent drift discovered halfway through an experiment.
-"""
+"""FastRunner correctness and the baseline regression fixture."""
 from __future__ import annotations
 
 import json
@@ -17,8 +11,7 @@ from swat_gym.fastrunner import TXTINOUT
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "baseline.json").read_text())
 
-#: Loose enough to absorb compiler/libm differences between builds, tight enough that a real
-#: behavioural divergence cannot hide. A failure here wants investigating, not relaxing.
+#: Cross-build tolerance. Investigate failures; don't relax.
 RTOL = 1e-4
 
 
@@ -73,27 +66,7 @@ def test_nitrogen_stress_matches_fixture(baseline):
 
 
 def test_annuals_are_n_stressed_and_alfalfa_is_not(baseline):
-    """A property, not a number: the finding Exp 1 is built on must hold.
-
-    The 20-day floor is deliberately NOT tracked down as the model improves. It was 41 d before
-    the orgn_min fix, 33 d after it, and 26.6 d after the wgn port — a monotone decline toward
-    the threshold. Tripping it means the annual/perennial N asymmetry Exp 1 is premised on has
-    stopped holding, which wants investigating (and re-premising Exp 1), not relaxing.
-
-    **Re-premised 2026-08-28, after investigating — the bound was not lowered, its subject
-    changed.** This asserted the floor on *2018 corn*, which ran 20.8 d. Restoring corn's
-    workbook ``bm_e`` (64.5 → 50.0), ``lai_pot`` (4.95 → 4.0) and canopy curve under rule 11b
-    took it to **5.2 d**: the book parameters grow a smaller corn crop, which demands less
-    nitrogen. The workbook values are separately validated and are the collaborator's to set, so
-    that is a residual to report rather than a defect to fit, and corn's 20 d can never come
-    back by any legitimate route.
-
-    The *property* is unchanged and still holds — annual crops are N-limited where the perennial
-    is not — but **barley now carries it**, at 35.7 d in 2019 against alfalfa's zero in all three
-    of its years. So the floor is asserted on the annual crops collectively. Corn's own value is
-    pinned only as a ceiling, to catch the opposite failure: if corn ever becomes *more* stressed
-    than barley again, something upstream moved and this premise wants re-checking.
-    """
+    """Annual crops are N-stressed (>= 20 d) while alfalfa is not; corn capped below barley."""
     pw = baseline.read("hru_pw_yr.txt")
     stress = {int(y): s for y, s in zip(pw["yr"], pw["strsn"])}
     annuals = {2013: "corn", 2014: "barley", 2018: "corn", 2019: "barley"}
@@ -184,11 +157,7 @@ def test_read_strips_units_row(baseline):
 
 
 def test_missing_required_input_fails_loudly(tmp_path):
-    """A deleted `plants.plt` must abort, not silently corrupt every run.
-
-    Without it SWAT+ exits 0 and writes `basin_crop_yld_yr.txt` with its own filename table in
-    the crop-name column. Every downstream number is then garbage while nothing looks wrong.
-    """
+    """Missing plants.plt must abort (SWAT+ would silently corrupt output)."""
     import shutil
 
     from swat_gym.fastrunner import TXTINOUT

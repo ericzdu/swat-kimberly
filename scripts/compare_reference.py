@@ -1,9 +1,4 @@
-"""Compare this SWAT+ model against the calibrated ArcSWAT reference and GRACEnet.
-
-The reference is HRU 119 / subbasin 14 of an ArcSWAT (SWAT2012) model of the same Kimberly
-GRACEnet field, whose annual results are committed to ``data/reference_hru119.csv`` (see
-that file's provenance in the README). It tracks the GRACEnet measurements closely, so it
-is the target this model's inputs were reconciled against.
+"""Compare against the ArcSWAT reference (data/reference_hru119.csv) and GRACEnet.
 
     uv run python scripts/compare_reference.py
 """
@@ -18,11 +13,7 @@ from swat_gym import FastRunner
 ROOT = Path(__file__).resolve().parents[1]
 REF_CSV = ROOT / "data" / "reference_hru119.csv"
 
-# GRACEnet measured annual dry-matter yield (t/ha). Single source of truth is
-# calib_report.GRACENET -- this file used to carry its own five-year copy that omitted both
-# barley years, so it printed NaN for barley and reported a GRACEnet PBIAS computed over the
-# five easy years. Barley is the model's worst crop against measurement; excluding it flattered
-# the score by ~10 points.
+# Single source of truth for measured yield.
 from calib_report import GRACENET  # noqa: E402
 
 CROP = {"CSIL": "corn", "BARL": "barl", "ALFA": "alfa"}

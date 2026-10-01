@@ -1,7 +1,6 @@
 """``print.prt`` is read positionally by SWAT+, so column alignment is load-bearing."""
 from __future__ import annotations
 
-from pathlib import Path
 
 from swat_gym.fastrunner import TXTINOUT
 from swat_gym.printprt import GYM_OUTPUTS, trim

@@ -1,16 +1,4 @@
-"""Port the Portneuf profile into soils.sol, and set the HRU to 1 ha.
-
-**Source: the calibrated ArcSWAT reference model** (`TxtInOut-2/000140001.sol`, HRU 119 /
-subbasin 14 — the same Kimberly GRACEnet field), *not* RuFaS. That model reproduces the
-GRACEnet measurements closely, so its soil parameterization is the one to match. An earlier
-version of this script wrote a RuFaS-derived 6-layer profile to 1500 mm, which differed in
-layer count, depth, hydrologic group (B vs C), AWC, Ksat, albedo and organic carbon.
-
-SWAT+ stores available water capacity (AWC = field capacity - wilting point) rather than
-FC/WP separately, which is exactly what the reference's "Ave. AW Incl. Rock Frag" row holds.
-The HRU (hru1) uses soil '80295'; we rewrite that block in place (keeping the name so
-hru-data.hru stays valid) and leave the other soils untouched.
-"""
+"""Port the reference Portneuf profile into soils.sol (block '80295', in place) and set the HRU to 1 ha."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,8 +16,6 @@ ANION_EXCL, PERC_CRK = 0.5, 0.5
 # Reference profile, one tuple per layer, in soils.sol column order:
 #   dp (mm), bd, awc, soil_k (mm/hr), carbon (%), clay, silt, sand, rock (%),
 #   alb, usle_k, ec, caco3, ph
-# pH and CaCO3 are zero below layer 2 in the reference file; carried across verbatim
-# (codes.bsn has carbon=0, so the CENTURY routines that read them are inactive).
 LAYERS = [
     (150.0,  1.30, 0.20, 32.40, 1.50, 17.0, 69.3, 13.7, 0.0, 0.30, 0.43, 0.0,  8.0, 7.9),
     (310.0,  1.40, 0.18, 10.15, 0.75,  9.5, 69.3, 21.2, 0.0, 0.30, 0.64, 5.0, 23.0, 8.4),
@@ -44,19 +30,7 @@ BD_COL = 1   # index of bd within a LAYERS tuple
 
 
 def measured_bd() -> list[float]:
-    """Bulk density per soils.sol layer, from the GRACEnet measurement rather than the reference.
-
-    ``GraceNet Soil and Nutrient Properties.xlsx::Soil Bulk Density`` samples four plots at
-    five depths; ``extract_primary.py`` writes the plot mean to ``data/soil_gracenet.csv``.
-    That file was being produced and then never read — the profile below was the ArcSWAT
-    reference's, which is plot 203 alone (1.30/1.40/1.50/1.40/1.30) rather than the four-plot
-    mean. The differences are small (<=3.4 % per layer) but they propagate into every
-    mass-per-hectare conversion the model reports, and there is no reason to prefer one plot's
-    profile over the measured mean of all four.
-
-    Samples are assigned to layers by depth and thickness-weighted where a layer spans more
-    than one sample (the 610-1220 mm layer covers the 910 and 1220 mm samples).
-    """
+    """Per-layer bulk density from measured GRACEnet plot means, thickness-weighted."""
     df = pd.read_csv(SOIL_CSV).dropna(subset=["bd_g_cm3"]).sort_values("depth_mm")
     tops = [0.0] + [float(d) for d in df["depth_mm"][:-1]]
     df = df.assign(top=tops, thick=lambda d: d["depth_mm"] - d["top"])
@@ -113,10 +87,7 @@ def main() -> None:
     resize_containing_objects()
 
 
-#: Objects that inherit the a10 catchment's 1431.72 ha and must follow the HRU down to 1 ha.
-#: Each entry is (filename, first data line index, column indices holding an area).
-#: ``object.cnt`` is the load-bearing one -- its ``ls_area``/``tot_area`` are what SWAT+
-#: normalises the basin-level tables by.
+#: (file, first data line, area columns) to resize to 1 ha.
 CONTAINERS = [
     ("object.cnt", 2, (1, 2)),
     ("aquifer.con", 2, (3,)),
@@ -127,18 +98,7 @@ CONTAINERS = [
 
 
 def resize_containing_objects() -> None:
-    """Shrink the routing unit, landscape unit and aquifers to the HRU's area.
-
-    The a10 template's HRU sits inside a 1431.72 ha catchment. ``hru.con`` was resized to
-    1 ha, but the objects *containing* it were not, so every table SWAT+ normalises by an
-    object area rather than by land area -- ``basin_aqu_*`` above all -- came out diluted by
-    a factor of ~1432. Recharge read 0.04 mm against 62 mm of soil percolation, and nitrate
-    reaching groundwater read ~0.1 kg/ha against a real value two orders of magnitude larger.
-    Nothing was mis-simulated; the reported units were simply not per-field.
-
-    This matters beyond tidiness: ``basin_aqu_yr.no3_rchg`` is the leaching externality in the
-    gym's reward, and at 1/1432 scale it would have looked like a constant zero.
-    """
+    """Resize containing objects to 1 ha (else basin_aqu tables are diluted ~1432x)."""
     for name, line_i, cols in CONTAINERS:
         path = TIO / name
         lines = path.read_text().splitlines(keepends=True)

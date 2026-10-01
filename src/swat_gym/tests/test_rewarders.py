@@ -1,10 +1,4 @@
-"""Tests for the profit reward.
-
-The load-bearing one is :func:`test_manure_matches_engine_nitrogen`. The reward reads manure
-mass off the schedule's ``op_data3`` while the engine independently computes the nitrogen that
-mass carries, so agreeing with ``basin_nb_yr.fertn`` to floating-point is a real cross-check on
-the parse -- not a restatement of it.
-"""
+"""Profit reward tests (manure parse cross-checked vs engine fertn)."""
 from __future__ import annotations
 
 import pytest
@@ -137,19 +131,14 @@ def test_n2o_is_reported_but_never_priced(runner):
         base["revenue"] - base["water_cost"] - base["manure_cost"]
         - base["fert_cost"] - base["op_cost"] - base["leach_cost"])
 
-    # Pricing nitrate changes profit and the leaching pathway of n2o, but n2o stays out of
-    # the sum: the profit delta is exactly the leach cost, with no emissions term.
+    # Profit delta equals leach cost exactly; N2O unpriced.
     priced = profit(runner, nass(2024), no3_price=10.0)
     assert priced["profit"] == pytest.approx(base["profit"] - priced["leach_cost"])
     assert priced["n2o_kg"] == pytest.approx(base["n2o_kg"])
 
 
 def test_adding_emissions_layer_left_profit_unchanged(runner):
-    """Regression: the IPCC layer is additive reporting, not a change to the objective.
-
-    Guards the refactor that introduced `n2o_kg` -- it reads manure *nitrogen*, which is not
-    a priced quantity (manure is priced by mass), so it must not perturb any cost term.
-    """
+    """N2O reporting must not change any cost term."""
     d = profit(runner, nass(2024))
     for k in ("revenue", "water_cost", "manure_cost", "fert_cost", "op_cost"):
         assert d[k] == pytest.approx(d[k])          # present and finite

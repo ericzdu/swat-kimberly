@@ -1,30 +1,8 @@
-"""Reconstruct the modelled soil-nitrate trajectory and score it against measurement.
+"""Reconstruct soil NO3 from fluxes (SWAT+ doesn't print the pool) and score vs measured April.
 
-**Why a reconstruction rather than an output.** SWAT+ rev 62 does not print the soil nitrate
-pool. Every ``no3`` column in every one of the ~24 output tables is either a flux
-(``surqno3``, ``lat3no3``, ``tileno3``, ``no3_rchg``, ``denit``) or a store belonging to some
-other object (``aquifer.no3_st``, channel and reservoir ``no3_stor``). Enabling the whole
-``hru_cb_*`` family does not help: ``hru_soil_snap`` carries the physical profile only (bulk
-density, AWC, texture, total carbon) and ``hru_ncycle`` carries transformation *rates*. So the
-pool has to be accumulated from the fluxes that enter and leave it.
-
-**What closes and what does not.** At this site the loss terms are negligible — surface and
-lateral nitrate, tile drainage, denitrification and recharge together come to under 5 kg/ha in
-the worst year and under 0.3 kg/ha in five of the seven. The balance is therefore essentially
-*mineralisation in, uptake out*, plus fertiliser in the manure years. One term is unreported:
-the applied **ammonium**. The GRACEnet manures are 20 % mineral N by mass and that mineral
-fraction is 99 % NH3-N (``fertilizer.frt``), and rev 62 prints neither the nitrification flux
-nor the volatilisation loss, so the fate of that ammonium is invisible.
-
-Rather than assume it, the reconstruction **brackets** it: ``lo`` is the pool if every applied
-ammonium ion volatilises, ``hi`` if all of it nitrifies and none is lost. The three alfalfa
-years apply no fertiliser at all, so there the bracket collapses to a point and the balance is
-exact — those are the years the calibration can actually be held to.
-
-**One-step-ahead, not free-run.** Each year is started from the *measured* April pool rather
-than from the previous year's simulated one, so a year's score reflects that year's fluxes
-instead of inheriting every earlier error. The free-running trajectory is reported alongside
-because a model that only works when re-anchored annually is worth knowing about.
+Applied ammonium fate is unreported, so the pool is bracketed: lo = all volatilises, hi = all
+nitrifies. Alfalfa years (no fertiliser) are exact. Scored one-step-ahead from the measured
+pool; free-run also reported.
 
     uv run python scripts/n_trajectory.py
 """
@@ -37,9 +15,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 MEAS_CSV = ROOT / "data" / "soil_no3_gracenet.csv"
 
-#: The measured profile is sampled every April, so the change between two samples is driven by
-#: the calendar year in between. Fertiliser goes on ~10 April, just *after* the sampling, which
-#: is what makes the alignment clean rather than approximate.
+#: Sampled in April, before the ~10 April fertiliser.
 SAMPLE_MONTH = "April"
 
 
@@ -49,13 +25,7 @@ def measured() -> pd.DataFrame:
 
 
 def fertiliser_split(txtinout: Path) -> tuple[float, float]:
-    """``(mineral fraction of applied N, NH3 fraction of that mineral N)`` for the site manures.
-
-    Derived from ``fertilizer.frt`` rather than hard-coded. All four GRACEnet manures
-    (``gn2013``, ``gn2014``, ``gn2018``, ``gn2019``) share the same 0.20 mineral / 0.80 organic
-    split, so a single pair of numbers describes every application; the assertion below is what
-    guarantees that stays true if the manure analyses are ever re-ported.
-    """
+    """(mineral frac of N, NH3 frac of mineral N) from fertilizer.frt; asserts all manures agree."""
     rows = {}
     for line in (txtinout / "fertilizer.frt").read_text().splitlines()[2:]:
         t = line.split()
@@ -125,23 +95,14 @@ def trajectory(runner) -> pd.DataFrame:
 
 
 def score(traj: pd.DataFrame, exact_only: bool = True) -> float:
-    """Root-mean-square miss in kg N/ha — 0 when every year lands inside its bracket.
-
-    ``exact_only`` restricts the score to the fertiliser-free years, where the reconstruction
-    has no unreported term. Those are the only years the model can be *held* to; the manure
-    years still contribute a reported miss, but scoring them would be scoring the width of our
-    own ignorance about ammonium.
-    """
+    """RMS miss outside the bracket, kg N/ha. ``exact_only``: fertiliser-free years only."""
     g = traj[traj["exact"]] if exact_only else traj
     if g.empty:
         return float("nan")
     return float((g["miss"] ** 2).mean() ** 0.5)
 
 
-#: Context for the mineralisation rate, both from `PROVENANCE` §5e. Neither is a target here —
-#: the first is a different field under a heavier manure regime and is 0-60 cm rather than the
-#: full profile; the second is a model. They are quoted because they bracket the same quantity
-#: from a measurement and from SWAT2012, and our SWAT+ figure sits far below both.
+#: Mineralisation context values (PROVENANCE §5e); not targets.
 MINERALISATION_CONTEXT = (
     (209.8, "measured buried-bag net N min, 0-60 cm, LT Manure 30_Annual field (8 yr)"),
     (117.0, "ArcSWAT reference A_MN on *this* field, 2013-2019 mean"),
