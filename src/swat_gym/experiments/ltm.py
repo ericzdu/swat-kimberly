@@ -41,6 +41,8 @@ import multiprocessing as mp
 import os
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import util as mp_util
 
 import numpy as np
 
@@ -67,6 +69,8 @@ LTM_VERSION = 4   # 2: W4 dates/manure basis, auto-irrigation (Exp 1, Exp 3 base
 #: 3 (2026-10-27): irrigation efficiency (gross water scored), spin-up beans, rotation rules
 #: 4 (2026-10-30): relative yield replaces profit in the score; yield floor
 REPORTED = ("score", "ry", "profit", *TERMS)
+#: Bump when minimise's result can change for the same inputs (fixed stages recompute).
+CMA_VERSION = 2   # 2 (2026-10-31): x0 kept on ties (a flat objective returned a random candidate)
 
 
 def practice_key(lever: str) -> dict:
@@ -109,6 +113,8 @@ def _neg_scores(xs, window, lever, prices, ref_key, w):
     k = len(xs)
     if k not in _RUNNERS:
         _RUNNERS[k] = LtmRunner(k, batched=True)
+        # pool workers never leave a with-block: close (delete the temp copy) at worker exit
+        mp_util.Finalize(None, _RUNNERS[k].close, exitpriority=10)
     plans = [plan_from_x(lever, np.asarray(x)) for x in xs]
     return [-ref.score(episode(p, o, prices, window), w)
             for p, o in zip(plans, _RUNNERS[k].run(plans, window))]
@@ -184,21 +190,33 @@ def cycles(max_len: int = CYCLE_MAX) -> list[tuple[str, ...]]:
 
 def frozen_plan(lever: str, train_eps: list[dict]) -> EpisodePlan:
     """A policy's train decisions as one open-loop plan: per-season majority crop (R, kept
-    valid), else the mean decision vector."""
+    valid; where no crop the policy chose is valid, the rule-forced fill), else the mean
+    decision vector."""
     if lever != "R":
         return plan_from_x(lever, np.mean([np.asarray(e["x"]) for e in train_eps], axis=0))
     chosen: list[str] = []
-    for k in range(len(chosen), SEASONS):
-        if len(chosen) > k:
-            continue
+    for k in range(SEASONS):
         for crop, _ in Counter(e["crops"][k] for e in train_eps).most_common():
             try:
                 validate(fill_rotation(chosen + [crop]))
             except ValueError:
                 continue
-            chosen.append(crop)
             break
-    return EpisodePlan(crops=fill_rotation(chosen), irr_auto=True)
+        else:
+            # appending nothing would shift every later season one year early
+            crop = fill_rotation(chosen)[k]
+        chosen.append(crop)
+    crops = tuple(chosen)
+    validate(crops)
+    return EpisodePlan(crops=crops, irr_auto=True)
+
+
+def sign_label(means: list[float]) -> str:
+    """Rule 3 over per-seed mean differences: one sign -> consistent, mixed -> unresolvable."""
+    signs = sorted({float(np.sign(m)) for m in means})
+    if signs == [0.0]:
+        return "no difference (every seed identical)"
+    return "consistent" if len(signs) == 1 else "unresolvable at this seed count"
 
 
 def compare(a: list[dict], b: list[dict]) -> dict:
@@ -291,6 +309,33 @@ def main(argv=None) -> dict:
                          "train": run_plans([EpisodePlan(crops=c, irr_auto=True) for c in cands],
                                             TRAIN, prices)}
             save_stage(stage_dir / "cycles.json", cfg, cyc_stage)
+    fixed_by: dict = {}
+    if lever != "R":
+        # the three searches at once: one search keeps only len(TRAIN) of the cores busy
+        todo = []
+        for s_name in args.strategies:
+            cfg = {**base_cfg, "stage": "fixed", "strategy": s_name, "budget": args.budget,
+                   "reference": ref.key(), "cma": CMA_VERSION}
+            done = load_stage(stage_dir / f"fixed_{s_name}.json", cfg)
+            if done is None:
+                todo.append((s_name, cfg))
+            else:
+                fixed_by[s_name] = done
+        per_search = max(1, min(len(TRAIN), args.workers))
+
+        def search(item):
+            s_name, cfg = item
+            x, n, hist = minimise(_Objective(lever, prices, ref.key(), STRATEGIES[s_name]),
+                                  measured_x(lever), evals=max(10, args.budget // len(TRAIN)),
+                                  windows=TRAIN, batched=True, workers=per_search,
+                                  label=f"{tag} {s_name}")
+            fixed = {"x": list(map(float, x)), "evals": int(n), "history": hist[-20:]}
+            save_stage(stage_dir / f"fixed_{s_name}.json", cfg, fixed)
+            return s_name, fixed
+
+        if todo:
+            with ThreadPoolExecutor(len(todo)) as ex:
+                fixed_by.update(ex.map(search, todo))
     for s_name in args.strategies:
         w = STRATEGIES[s_name]
         if lever == "R":
@@ -300,16 +345,7 @@ def main(argv=None) -> dict:
                      "n_candidates": len(means), "train_score": means[int(order[0])],
                      "top10": [[cyc_stage["crops"][int(i)], means[int(i)]] for i in order[:10]]}
         else:
-            cfg = {**base_cfg, "stage": "fixed", "strategy": s_name, "budget": args.budget,
-                   "reference": ref.key()}
-            fixed = load_stage(stage_dir / f"fixed_{s_name}.json", cfg)
-            if fixed is None:
-                evals = max(10, args.budget // len(TRAIN))
-                x, n, hist = minimise(_Objective(lever, prices, ref.key(), w), measured_x(lever),
-                                      evals=evals, windows=TRAIN, batched=True,
-                                      workers=args.workers, label=f"{tag} {s_name}")
-                fixed = {"x": list(map(float, x)), "evals": int(n), "history": hist[-20:]}
-                save_stage(stage_dir / f"fixed_{s_name}.json", cfg, fixed)
+            fixed = fixed_by[s_name]
         fixed_plan = EpisodePlan(crops=tuple(fixed["crops"]), irr_auto=True) if lever == "R" else \
             plan_from_x(lever, np.asarray(fixed["x"]))
         fixed_test = run_plans([fixed_plan], TEST, prices)[0]
@@ -333,9 +369,6 @@ def main(argv=None) -> dict:
                 "frozen_crops": list(fz_plan.crops) if lever == "R" else None,
                 "test_means": {k: float(np.mean([e[k] for e in pol])) for k in REPORTED},
             }
-        signs = {key: sorted({np.sign(v[key]["score"]["mean"]) for v in per_seed.values()})
-                 for key in ("policy_vs_measured", "policy_vs_default", "policy_vs_fixed",
-                             "adaptivity_value")}
         report["strategies"][s_name] = {
             "w": w,
             "test_means": {name: {k: float(np.mean([e[k] for e in eps])) for k in REPORTED}
@@ -347,8 +380,9 @@ def main(argv=None) -> dict:
             "fixed_vs_default": compare(fixed_test, dflt_test),
             "default_vs_measured": compare(dflt_test, meas_test),
             "es": per_seed,
-            "resolvable": {k: ("unresolvable at this seed count" if len(v) > 1 else "consistent")
-                           for k, v in signs.items()},
+            "resolvable": {k: sign_label([v[k]["score"]["mean"] for v in per_seed.values()])
+                           for k in ("policy_vs_measured", "policy_vs_default",
+                                     "policy_vs_fixed", "adaptivity_value")},
         }
     report["wall_s"] = time.time() - t0
     (OUT / f"{tag}.json").write_text(json.dumps(report, indent=1, default=float) + "\n")

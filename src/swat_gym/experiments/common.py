@@ -56,6 +56,9 @@ def minimise(fn, x0, *, evals: int, windows=None, batched: bool = False, seed: i
     ``fn(xs, window) -> [values]`` scores the whole generation on one window per task (crop
     models run it as one multi-HRU engine run). Evaluations that raise are counted and
     ranked last; past MAX_FAILURE_FRAC the search aborts with the first traceback.
+    ``x0`` is scored first and kept unless a candidate is strictly better, so a flat objective
+    returns x0, not a random first candidate (its evaluation is not told to CMA-ES, so the
+    search path is unchanged; it adds one candidate to the evaluation count).
     Returns (best_x, n_evals, history of {evals, best_f, failed}). Deterministic given seed.
     """
     if batched and windows is None:
@@ -71,47 +74,60 @@ def minimise(fn, x0, *, evals: int, windows=None, batched: bool = False, seed: i
     best_x, best_f, history, failed, first_tb = x0, float("inf"), [], 0, None
     pool = mp.get_context("spawn").Pool(workers) if workers > 1 else None
     t0 = time.time()
+
+    def scores(xs):
+        """Per-candidate objective over all windows; FAILED for a candidate that raised."""
+        nonlocal failed, first_tb
+        if batched:
+            tasks = [(fn, [np.asarray(x) for x in xs], w) for w in ws]
+            out = pool.map(_guarded_batch, tasks) if pool else list(map(_guarded_batch, tasks))
+            # Re-shape to the per-(candidate, window) layout below.
+            res = [(vals[i], tb) for i in range(len(xs)) for vals, tb in out]
+        else:
+            tasks = [(fn, np.asarray(x), w) for x in xs for w in ws]
+            if pool:
+                res = pool.map(_guarded, tasks, chunksize=max(1, len(tasks) // (4 * workers)))
+            else:
+                res = list(map(_guarded, tasks))
+        fs = []
+        for i in range(len(xs)):
+            part = res[i * len(ws):(i + 1) * len(ws)]
+            bad = [tb for _, tb in part if tb is not None]
+            if bad:
+                failed += 1
+                first_tb = first_tb or bad[0]
+                fs.append(FAILED)
+            else:
+                fs.append(float(np.mean([v for v, _ in part])))
+        return fs
+
     try:
+        best_f = scores([x0])[0]
+        n_extra = 1
+        history.append({"evals": n_extra, "best_f": best_f, "failed": failed})
         while not es.stop():
             xs = es.ask()
-            if batched:
-                tasks = [(fn, [np.asarray(x) for x in xs], w) for w in ws]
-                out = pool.map(_guarded_batch, tasks) if pool else list(map(_guarded_batch, tasks))
-                # Re-shape to the per-(candidate, window) layout below.
-                res = [(vals[i], tb) for i in range(len(xs)) for vals, tb in out]
-            else:
-                tasks = [(fn, np.asarray(x), w) for x in xs for w in ws]
-                if pool:
-                    res = pool.map(_guarded, tasks,
-                                   chunksize=max(1, len(tasks) // (4 * workers)))
-                else:
-                    res = list(map(_guarded, tasks))
-            fs = []
-            for i in range(len(xs)):
-                part = res[i * len(ws):(i + 1) * len(ws)]
-                bad = [tb for _, tb in part if tb is not None]
-                if bad:
-                    failed += 1
-                    first_tb = first_tb or bad[0]
-                    fs.append(FAILED)
-                else:
-                    fs.append(float(np.mean([v for v, _ in part])))
+            fs = scores(xs)
             if failed >= max(MIN_FAILURES, MAX_FAILURE_FRAC * evals):
-                raise RuntimeError(f"{label}: {failed} of {es.countevals + len(xs)} evaluations "
-                                   f"raised; first:\n{first_tb}")
+                raise RuntimeError(f"{label}: {failed} of {es.countevals + n_extra + len(xs)} "
+                                   f"evaluations raised; first:\n{first_tb}")
             for x, f in zip(xs, fs):
                 if f < best_f:
                     best_f, best_x = f, np.asarray(x).copy()
             es.tell(xs, fs)
-            history.append({"evals": int(es.countevals), "best_f": best_f, "failed": failed})
+            history.append({"evals": int(es.countevals) + n_extra, "best_f": best_f,
+                            "failed": failed})
             print(f"  {label}: {es.countevals}/{evals} evals  best objective {best_f:.6g}  "
                   f"failed {failed}  {time.time() - t0:.0f}s", flush=True)
     finally:
         if pool:
+            # join, not just close: a pool collected while its workers exit terminates them
+            # before their runners delete their temp copies (2026-10-31: ~670 dirs leaked)
             pool.close()
+            pool.join()
     if failed:
         print(f"  {label}: {failed} failed evaluation(s); first:\n{first_tb}", flush=True)
-    return best_x, int(es.countevals), history
+    return best_x, int(es.countevals) + n_extra, history
 
 
 # -- stage reuse ------------------------------------------------------------------------

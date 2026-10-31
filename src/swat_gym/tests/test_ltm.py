@@ -276,3 +276,27 @@ def test_crop_reference_substitutions_are_valid():
         validate(crops)
         assert all(crops[k - 1] == c for k in ks)
         assert all(x == t for j, (x, t) in enumerate(zip(crops, TRIAL_ROTATION)) if j + 1 not in ks)
+
+
+def test_minimise_keeps_x0_on_a_flat_objective():
+    """A flat objective returns x0, not CMA-ES's first random candidate (Exp 2 yield, v6)."""
+    from swat_gym.experiments.common import minimise
+    x0 = np.array([0.2, 0.7, 0.4])
+    x, n, _ = minimise(lambda x: 1.0, x0, evals=60, seed=3)
+    assert np.array_equal(x, x0) and n >= 2
+
+
+def test_frozen_plan_keeps_seasons_aligned():
+    """A season with no valid majority crop takes the rule-forced fill, so later seasons stay put."""
+    from swat_gym.experiments.ltm import frozen_plan
+    chose = ("barl", "barl", "wwht", "pota", "barl", "sgbt", "wwht", "sgbt")   # s2 breaks no-repeat
+    plan = frozen_plan("R", [{"crops": chose}] * 3)
+    assert plan.crops == TRIAL_ROTATION
+    assert plan.crops[2:] == chose[2:]
+
+
+def test_sign_label():
+    from swat_gym.experiments.ltm import sign_label
+    assert sign_label([0.0, 0.0]) == "no difference (every seed identical)"
+    assert sign_label([-1.0, -0.5]) == "consistent"
+    assert sign_label([-1.0, 0.5]) == "unresolvable at this seed count"
