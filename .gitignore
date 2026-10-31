@@ -18,3 +18,14 @@ __pycache__/
 
 PAPER.md
 CLAUDE.md
+
+# Ai-SWAT+ app (app/) and its crop calibration (calibration/), merged 2026-10-30
+node_modules/
+/app/data/
+/app/soils_db/*
+!/app/soils_db/.gitkeep
+/app/ai-swat/src/.env
+/app/report/*.pdf
+/app/report/*.html
+/calibration/model/TxtInOut.broken_*/
+/calibration/model/*.out

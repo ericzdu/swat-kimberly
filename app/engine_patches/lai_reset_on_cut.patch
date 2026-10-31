@@ -1,0 +1,20 @@
+diff --git a/src/mgt_harvbiomass.f90 b/src/mgt_harvbiomass.f90
+index 374bff8..afeea1d 100644
+--- a/src/mgt_harvbiomass.f90
++++ b/src/mgt_harvbiomass.f90
+@@ -91,9 +91,15 @@
+       !! calculation for dead roots allocations, resetting phenology, updating other pools
+       !! reset leaf area index and fraction of growing season
+       if (pl_mass(j)%tot(ipl)%m > 0.001) then
++        if (harvop_db(iharvop)%typ == "biomass") then
++          !! AI-SWAT+ patch: a hay cut removes the canopy - lai to zero and regrow from the start of the curve
++          pcom(j)%plg(ipl)%lai = 0.
++          pcom(j)%plcur(ipl)%phuacc = 0.
++        else
+         !! assume the lai biomass relationship - 0.5 lai decline for biomass removal
+         pcom(j)%plg(ipl)%lai = pcom(j)%plg(ipl)%lai * (1. - 0.5 * hi_tot)
+         pcom(j)%plcur(ipl)%phuacc = pcom(j)%plcur(ipl)%phuacc * (1. - 0.5 * hi_tot)
++        end if
+         pcom(j)%plg(ipl)%root_frac = pl_mass(j)%root(ipl)%m / pl_mass(j)%tot(ipl)%m
+       else
+         pl_mass(j)%tot(ipl)%m = 0.

@@ -12,6 +12,11 @@ both the trial's own practice and the best fixed (open-loop) plan found at the s
 budget. The evaluation protocol separates the two effects: the gain from search alone, and the
 additional gain from adapting to the simulated soil state.
 
+The repository also contains **AI-SWAT+** (`app/`), a web application for farmer-facing SWAT+
+scenario analysis, and the per-crop calibration that supplies the model's crop parameters
+(`calibration/`). Both were merged from the separate Ai-SWAT-Plus project on 2026-10-30, ahead
+of integrating the RL environment into the application; they are not yet connected to it.
+
 ## Installation and usage
 
 Requires [uv](https://docs.astral.sh/uv/). Engine runs are CPU-bound, and each job uses all
@@ -25,13 +30,19 @@ perl -e 'use POSIX; setsid(); exec @ARGV' -- bash scripts/run_ltm.sh  # full run
 uv run python scripts/ltm_nutrient_summary.py                         # water and nutrient report
 ```
 
+The AI-SWAT+ application runs in Docker (see `app/START-HERE.md` and `app/DOCKER.md`):
+
+```bash
+cd app && docker compose up --build                                   # http://localhost:3000
+```
+
 ### Rebuilding the model
 
 Each step is idempotent, and its outputs are committed.
 
 ```bash
 uv run python scripts/port_ltm.py           # trial workbooks -> data/ltm/*.csv
-uv run --project ~/Desktop/projects/Ai-SWAT-Plus/calibration python scripts/ltm_crop_params.py
+uv run --project calibration python scripts/ltm_crop_params.py   # crop parameters from calibration/
 uv run python scripts/port_gridmet.py       # gridMET at the field (cached download)
 uv run python scripts/build_ltm.py          # -> model/ltm/TxtInOut
 uv run python scripts/ltm_calibrate_n.py --apply && uv run python scripts/build_ltm.py
@@ -39,8 +50,9 @@ uv run python scripts/ltm_validate.py       # comparison with measurements -> ru
 uv run python scripts/ltm_fit_auto_irr.py   # auto-irrigation trigger (management, not calibration)
 ```
 
-`port_ltm.py` reads the collaborator's workbooks and `ltm_crop_params.py` reads the
-Ai-SWAT-Plus repository; neither source is included here.
+`port_ltm.py` reads the collaborator's workbooks, which are not included here.
+`ltm_crop_params.py` runs in the `calibration/` environment and copies each crop's fitted
+parameters from it.
 
 ## Model
 
@@ -56,8 +68,8 @@ Ai-SWAT-Plus repository; neither source is included here.
 - **Inputs.** Trial measurements (`data/ltm/`, each row with its source) override SSURGO
   defaults. Weather is gridMET at the field, 1995–2025.
 - **Calibration.**
-  - Crop parameters are those fitted in the companion project Ai-SWAT-Plus, copied without
-    modification.
+  - Crop parameters are those fitted by the Ai-SWAT-Plus crop calibration (`calibration/`),
+    copied without modification.
   - One soil-nitrogen parameter (the active-humus fraction) is fitted to the control
     treatment's measured mineralisation.
   - No other parameter is calibrated. `scripts/ltm_validate.py` compares the model with the
@@ -118,6 +130,8 @@ The following limits apply to every result and should be stated alongside it:
 | `scripts/` | model build, validation, reports and the run script |
 | `runs/` | outputs (not tracked) |
 | `paper/` | manuscript template (Elsevier CAS) |
+| `app/` | AI-SWAT+ web application: React frontend, FastAPI backend, Docker deployment, documentation vault (`app/START-HERE.md`) |
+| `calibration/` | Ai-SWAT-Plus per-crop calibration (ET, biomass, N and P uptake); a separate uv project with its own rules (`calibration/README.md`) |
 | `legacy/` | retired GRACEnet environment and crop-model benchmark (`legacy/README.md`) |
 
 Documentation:

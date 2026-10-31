@@ -1,0 +1,2 @@
+ a10_single_hru            SWAT+ 2026-06-15        MODULAR Rev 2026.62                                    
+          hru       year         mon         day     operation   lu_before         lu_after

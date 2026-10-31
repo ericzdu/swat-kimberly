@@ -1,0 +1,5 @@
+ a10_single_hru            SWAT+ 2026-06-15        MODULAR Rev 2026.62                                    
+  jday,   mon,   day,    yr,   unit , gis_id , name           ,            flo ,         dep_wt ,           stor,          rchrg,           seep,          revap,         no3_st,           minp,           orgn,           orgp,       no3_rchg,       no3_loss,        no3_lat,       no3_seep,        flo_cha,        flo_res,         flo_ls
+      ,      ,      ,      ,        ,        ,                ,              mm,              m ,             mm,             mm,             mm,             mm,        kg/ha_N,        kg/ha_P,        kg/ha_N,        kg/ha_P,        kg/ha_N,        kg/ha_N,        kg/ha_N,        kg/ha_N,             mm,             mm,             mm
+365,12,31,2025,1,10,aqu10           ,.00000,4.59136,268.006,.637070,.318535E-01,14.7688,.174805E-05,.00000,.500000,.00000,.102603E-04,.148593E-04,.00000,.410081E-10,.00000,.00000,.00000
+365,12,31,2025,2,1,aqu_deep01      ,.00000,19.8980,2388.75,.318535E-01,.00000,.00000,.178808E-10,.00000,.500000,.00000,.410081E-10,.151240E-09,.00000,.00000,.00000,.00000,.00000

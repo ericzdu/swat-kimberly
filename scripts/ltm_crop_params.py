@@ -8,9 +8,9 @@ to maturity, its ``harv.ops`` entry, and the spec (dates, irrigation windows). N
 or edited here (CLAUDE.md rule 11b). Also records the engine and the shared hydrology values
 the fits were made under.
 
-Run in the Ai-SWAT-Plus environment:
+Run in the calibration/ (Ai-SWAT-Plus) environment:
 
-    uv run --project ~/Desktop/projects/Ai-SWAT-Plus/calibration python scripts/ltm_crop_params.py
+    uv run --project calibration python scripts/ltm_crop_params.py
 """
 from __future__ import annotations
 

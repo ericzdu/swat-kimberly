@@ -1,0 +1,29 @@
+# Keep the build context small — the root holds runtime data, docs and node_modules.
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+
+# runtime state — the container uses its own /data volume
+data/
+ai_swat.db
+*.db-journal
+
+# gSSURGO SQLite (hundreds of MB) — mounted read-only at runtime, never baked
+soils_db/
+
+# Windows-only engine binaries (the image compiles a Linux engine from source)
+swatplus_bin/
+**/*.exe
+*.zip
+
+# docs / reports / editor cruft — not needed to run the app
+vault/
+report/
+.claude/
+.git/
+.vscode/
+.idea/
+**/dist
+**/build

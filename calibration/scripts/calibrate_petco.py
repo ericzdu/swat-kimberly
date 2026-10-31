@@ -1,0 +1,120 @@
+"""Calibrate ``hydrology.hyd:pet_co`` against measured AgriMet reference ET.
+
+``pet_co`` arrived as a **provisional drainage restore**: under SWAT+ rev 62 the model's deep
+percolation collapsed to ~0, taking ``no3_rchg`` with it, and scaling PET down to 0.81 bought
+back ~33 mm/yr. That is fitting a PET parameter to a percolation symptom, which leaves the
+manuscript carrying an unexplained 19 % haircut on potential evapotranspiration.
+
+There is a measurement for this parameter. ``data/observed_et_agrimet.csv`` carries daily
+reference ET from the AgriMet TWFI station (see ``port_agrimet.py``). The ``etos`` column is
+**grass**-reference ET, which is the definition SWAT+'s Penman-Monteith PET matches; ``etrs``
+is alfalfa-reference and runs ~35 % higher, so calibrating against it would be a definitional
+error rather than a model result.
+
+``pet_co`` multiplies computed PET, so PET is linear in it and one run fixes the optimum:
+
+    pet_co* = pet_co_run * sum(observed ETos) / sum(simulated PET)
+
+The sweep exists to confirm that linearity holds through the engine and, more importantly, to
+show what the PET-matched value costs on the quantities ``0.81`` was protecting — deep
+percolation, nitrate recharge and yield. Those are reported alongside, never folded into the
+objective.
+
+    uv run python scripts/calibrate_petco.py
+    uv run python scripts/calibrate_petco.py --values 0.85 0.90 0.95 1.00 --apply
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from swat_gym import FastRunner  # noqa: E402
+from swat_gym.fastrunner import EDITABLE, TXTINOUT  # noqa: E402
+from swat_gym.params import CALIBRATABLE, set_value  # noqa: E402
+
+from calib_report import collect, pbias  # noqa: E402
+
+FILE, ROW, COLUMN = "hydrology.hyd", "hyd1", "pet_co"
+
+#: Swept by default. Brackets the measurement-implied optimum from below (the incumbent 0.81)
+#: and above (the model-native 1.0), so the cost of moving is visible in both directions.
+DEFAULT_VALUES = (0.81, 0.90, 0.95, 1.00)
+
+
+def score(df: pd.DataFrame) -> dict[str, float]:
+    """The one calibration target, plus everything it trades against.
+
+    ``pet`` is the objective -- PET against measured grass-reference ETos. The rest are
+    reported so the trade is legible: ``perc`` and ``no3`` are what 0.81 was bought for, and
+    the yield columns are what the whole model is for.
+    """
+    meas = df[df["yld_meas"].notna()]
+    per_crop = {c: pbias(g["yld"], g["yld_meas"]) for c, g in meas.groupby("crop")}
+    return {
+        "pet_vs_meas": pbias(df["pet"], df["pet_meas"]),
+        "et_vs_ref": pbias(df["et"], df["et_ref"]),
+        "perc_mm": df["perc"].mean(),
+        "no3_rchg": df["no3"].mean(),
+        "yld_vs_meas": pbias(meas["yld"], meas["yld_meas"]),
+        "yld_worst": max(abs(v) for v in per_crop.values()),
+    }
+
+
+def implied_optimum(df: pd.DataFrame, pet_co: float) -> float:
+    """Solve for the pet_co that zeroes PET bias, exploiting PET's linearity in it."""
+    keep = df["pet"].notna() & df["pet_meas"].notna()
+    return pet_co * float(df.loc[keep, "pet_meas"].sum() / df.loc[keep, "pet"].sum())
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--values", nargs="+", type=float, default=list(DEFAULT_VALUES),
+                    help="pet_co values to sweep")
+    ap.add_argument("--apply", action="store_true",
+                    help="write the measurement-implied optimum into hydrology.hyd")
+    args = ap.parse_args()
+
+    src = (TXTINOUT / FILE).read_text()
+    rows, optima = [], {}
+
+    with FastRunner(editable=EDITABLE | CALIBRATABLE) as r:
+        for v in args.values:
+            r.run({FILE: set_value(src, FILE, ROW, COLUMN, v)})
+            df = collect(r)
+            rows.append({"pet_co": v, **score(df)})
+            optima[v] = implied_optimum(df, v)
+
+        best = round(sum(optima.values()) / len(optima), 3)
+        r.run({FILE: set_value(src, FILE, ROW, COLUMN, best)})
+        verify = collect(r)
+        rows.append({"pet_co": best, **score(verify)})
+
+    table = pd.DataFrame(rows)
+    print("\npet_co sweep -- objective is |pet_vs_meas|, everything else is a reported cost\n")
+    print(table.to_string(index=False, float_format=lambda v: f"{v:+9.2f}"))
+
+    spread = max(optima.values()) - min(optima.values())
+    print(f"\nimplied optimum from each run: "
+          + ", ".join(f"{k}->{v:.3f}" for k, v in optima.items()))
+    print(f"  spread {spread:.4f} "
+          f"({'linear, as expected' if spread < 0.01 else 'NON-LINEAR -- do not trust the solve'})")
+    print(f"\npet_co* = {best}  "
+          f"(verified: PET {table.iloc[-1]['pet_vs_meas']:+.1f} % vs measured ETos, "
+          f"perc {table.iloc[-1]['perc_mm']:.1f} mm/yr, "
+          f"no3_rchg {table.iloc[-1]['no3_rchg']:.2f} kg/ha/yr)")
+
+    if args.apply:
+        (TXTINOUT / FILE).write_text(set_value(src, FILE, ROW, COLUMN, best))
+        print(f"\n{FILE}: {COLUMN} -> {best} (written)")
+    else:
+        print(f"\n(not written -- re-run with --apply to set {COLUMN} = {best})")
+
+
+if __name__ == "__main__":
+    main()

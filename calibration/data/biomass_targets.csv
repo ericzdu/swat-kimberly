@@ -1,0 +1,12 @@
+# Collaborator's "Biomass and nutrient uptake calibration parameters and targets.xlsx", Sheet1
+# rows 20-27, received 2026-10-22. Long-term-study values from the collaborator's research
+# simulations. biomass_t_ha is maximum yearly total (above + belowground) biomass, except
+# alfalfa, where it is the yearly total yield of the four cuttings (target_kind = yield).
+# n_up / p_up are yearly plant uptake, kg/ha. No beans row: the collaborator has no data.
+crop,plants_plt,target_kind,biomass_t_ha,n_up_kg_ha,p_up_kg_ha
+ALFA,alfa,yield,12.5,500,45
+BARL,barl,bm_max,15,240,45
+CSIL,corn,bm_max,25,320,60
+POTA,pota,bm_max,15,300,60
+SGBT,sgbt,bm_max,26,440,61
+WWHT,wwht,bm_max,18,290,54

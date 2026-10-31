@@ -1,0 +1,2 @@
+ a10_single_hru            SWAT+ @TODAY@        MODULAR Rev @YEAR@.@SWAT_VERSION@                         
+          hru       year         mon         day     operation   lu_before         lu_after

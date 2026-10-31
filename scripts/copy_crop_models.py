@@ -6,10 +6,9 @@ Builds each crop with Ai-SWAT-Plus's own builder (``et_calibrate.CropFit._build`
 and engines, plus a ``spec.json`` the gym reads (season dates, irrigation windows, cuttings,
 auto decision-table names). Re-run after changing the Ai-SWAT-Plus model; nothing here is fitted.
 
-Must run in the Ai-SWAT-Plus environment, since it imports that project's builders:
+Must run in the calibration/ (Ai-SWAT-Plus) environment, since it imports that project's builders:
 
-    uv run --project ~/Desktop/projects/Ai-SWAT-Plus/calibration \\
-        python scripts/copy_crop_models.py [--crops CSIL ALFA]
+    uv run --project calibration python scripts/copy_crop_models.py [--crops CSIL ALFA]
 """
 from __future__ import annotations
 
@@ -25,7 +24,7 @@ import pandas as pd
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-AISWAT = Path.home() / "Desktop" / "projects" / "Ai-SWAT-Plus" / "calibration"
+AISWAT = ROOT / "calibration"          # Ai-SWAT-Plus crop calibration, merged 2026-10-30
 sys.path.insert(0, str(AISWAT / "src"))
 sys.path.insert(0, str(AISWAT / "scripts"))
 

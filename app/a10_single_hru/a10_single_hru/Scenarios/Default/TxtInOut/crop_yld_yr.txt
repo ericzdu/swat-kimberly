@@ -1,0 +1,3 @@
+ a10_single_hru            SWAT+ @TODAY@        MODULAR Rev @YEAR@.@SWAT_VERSION@                         
+                                                                            --YIELD (kg/ha)--
+  jday   mon   day    yr    unit PLANTNM                         MASS          C           N           P

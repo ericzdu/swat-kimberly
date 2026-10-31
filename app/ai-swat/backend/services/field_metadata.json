@@ -1,0 +1,2521 @@
+{
+ "hru.con": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential identifier of the HRU connection record (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the HRU object."
+  },
+  "gis_id": {
+   "label": "GIS ID",
+   "desc": "Identifier linking the object back to the source GIS layer."
+  },
+  "area": {
+   "label": "Area",
+   "unit": "ha",
+   "desc": "Area of the HRU."
+  },
+  "lat": {
+   "label": "Latitude",
+   "desc": "Latitude of the object centroid."
+  },
+  "lon": {
+   "label": "Longitude",
+   "desc": "Longitude of the object centroid."
+  },
+  "elev": {
+   "label": "Elevation",
+   "unit": "m",
+   "desc": "Elevation of the object."
+  },
+  "hru": {
+   "label": "HRU",
+   "desc": "Pointer (id) to the HRU properties this connection represents."
+  },
+  "wst": {
+   "label": "Weather Station",
+   "desc": "Name/id of the weather station assigned to the object."
+  },
+  "cst": {
+   "label": "Constituents",
+   "desc": "Pointer (id) to the constituents object; 0 if none."
+  },
+  "ovfl": {
+   "label": "Overbank Flooding",
+   "desc": "Overbank-flooding flag/id; 0 if none."
+  },
+  "rule": {
+   "label": "Rule",
+   "desc": "Pointer (id) to the decision-table/rule governing routing; 0 if none."
+  },
+  "out_tot": {
+   "label": "Outflow Count",
+   "desc": "Total number of outflow hydrograph connections for this object."
+  }
+ },
+ "rout_unit.con": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential identifier of the routing-unit connection record (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the routing-unit object."
+  },
+  "gis_id": {
+   "label": "GIS ID",
+   "desc": "Identifier linking the object back to the source GIS layer."
+  },
+  "area": {
+   "label": "Area",
+   "unit": "ha",
+   "desc": "Area of the routing unit."
+  },
+  "lat": {
+   "label": "Latitude",
+   "desc": "Latitude of the object centroid."
+  },
+  "lon": {
+   "label": "Longitude",
+   "desc": "Longitude of the object centroid."
+  },
+  "elev": {
+   "label": "Elevation",
+   "unit": "m",
+   "desc": "Elevation of the object."
+  },
+  "rtu": {
+   "label": "Routing Unit",
+   "desc": "Pointer (id) to the routing-unit properties this connection represents."
+  },
+  "wst": {
+   "label": "Weather Station",
+   "desc": "Name/id of the weather station assigned to the object."
+  },
+  "cst": {
+   "label": "Constituents",
+   "desc": "Pointer (id) to the constituents object; 0 if none."
+  },
+  "ovfl": {
+   "label": "Overbank Flooding",
+   "desc": "Overbank-flooding flag/id; 0 if none."
+  },
+  "rule": {
+   "label": "Rule",
+   "desc": "Pointer (id) to the decision-table/rule governing routing; 0 if none."
+  },
+  "out_tot": {
+   "label": "Outflow Count",
+   "desc": "Total number of outflow hydrograph connections for this object."
+  },
+  "obj_typ": {
+   "label": "Object Type",
+   "desc": "Type of the receiving object for an outflow hydrograph (first column of the repeating outflow block, followed in the file by obj_id, hyd_typ, frac).",
+   "options": [
+    {
+     "value": "hru",
+     "label": "hru - hru"
+    },
+    {
+     "value": "hlt",
+     "label": "hlt - hru_lte"
+    },
+    {
+     "value": "ru",
+     "label": "ru - routing unit"
+    },
+    {
+     "value": "mfl",
+     "label": "mfl - modflow"
+    },
+    {
+     "value": "aqu",
+     "label": "aqu - aquifer"
+    },
+    {
+     "value": "cha",
+     "label": "cha - channel"
+    },
+    {
+     "value": "res",
+     "label": "res - reservoir"
+    },
+    {
+     "value": "rec",
+     "label": "rec - recall"
+    },
+    {
+     "value": "exc",
+     "label": "exc - export coefficients"
+    },
+    {
+     "value": "dr",
+     "label": "dr - delivery ratio"
+    },
+    {
+     "value": "out",
+     "label": "out - outlet"
+    },
+    {
+     "value": "sdc",
+     "label": "sdc - swat-deg channel"
+    }
+   ]
+  }
+ },
+ "chandeg.con": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential identifier of the channel connection record (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the channel object."
+  },
+  "gis_id": {
+   "label": "GIS ID",
+   "desc": "Identifier linking the object back to the source GIS layer."
+  },
+  "area": {
+   "label": "Area",
+   "unit": "ha",
+   "desc": "Area draining to the channel."
+  },
+  "lat": {
+   "label": "Latitude",
+   "desc": "Latitude of the object centroid."
+  },
+  "lon": {
+   "label": "Longitude",
+   "desc": "Longitude of the object centroid."
+  },
+  "elev": {
+   "label": "Elevation",
+   "unit": "m",
+   "desc": "Elevation of the object."
+  },
+  "lcha": {
+   "label": "Channel",
+   "desc": "Pointer (id) to the SWAT-deg (lte) channel properties this connection represents."
+  },
+  "wst": {
+   "label": "Weather Station",
+   "desc": "Name/id of the weather station assigned to the object."
+  },
+  "cst": {
+   "label": "Constituents",
+   "desc": "Pointer (id) to the constituents object; 0 if none."
+  },
+  "ovfl": {
+   "label": "Overbank Flooding",
+   "desc": "Overbank-flooding flag/id; 0 if none."
+  },
+  "rule": {
+   "label": "Rule",
+   "desc": "Pointer (id) to the decision-table/rule governing routing; 0 if none."
+  },
+  "out_tot": {
+   "label": "Outflow Count",
+   "desc": "Total number of outflow hydrograph connections for this object."
+  }
+ },
+ "aquifer.con": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential identifier of the aquifer connection record (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the aquifer object."
+  },
+  "gis_id": {
+   "label": "GIS ID",
+   "desc": "Identifier linking the object back to the source GIS layer."
+  },
+  "area": {
+   "label": "Area",
+   "unit": "ha",
+   "desc": "Area of the aquifer."
+  },
+  "lat": {
+   "label": "Latitude",
+   "desc": "Latitude of the object centroid."
+  },
+  "lon": {
+   "label": "Longitude",
+   "desc": "Longitude of the object centroid."
+  },
+  "elev": {
+   "label": "Elevation",
+   "unit": "m",
+   "desc": "Elevation of the object."
+  },
+  "aqu": {
+   "label": "Aquifer",
+   "desc": "Pointer (id) to the aquifer properties this connection represents."
+  },
+  "wst": {
+   "label": "Weather Station",
+   "desc": "Name/id of the weather station assigned to the object."
+  },
+  "cst": {
+   "label": "Constituents",
+   "desc": "Pointer (id) to the constituents object; 0 if none."
+  },
+  "ovfl": {
+   "label": "Overbank Flooding",
+   "desc": "Overbank-flooding flag/id; 0 if none."
+  },
+  "rule": {
+   "label": "Rule",
+   "desc": "Pointer (id) to the decision-table/rule governing routing; 0 if none."
+  },
+  "out_tot": {
+   "label": "Outflow Count",
+   "desc": "Total number of outflow hydrograph connections for this object."
+  },
+  "obj_typ": {
+   "label": "Object Type",
+   "desc": "Type of the receiving object for an outflow hydrograph (first column of the repeating outflow block, followed in the file by obj_id, hyd_typ, frac).",
+   "options": [
+    {
+     "value": "hru",
+     "label": "hru - hru"
+    },
+    {
+     "value": "hlt",
+     "label": "hlt - hru_lte"
+    },
+    {
+     "value": "ru",
+     "label": "ru - routing unit"
+    },
+    {
+     "value": "mfl",
+     "label": "mfl - modflow"
+    },
+    {
+     "value": "aqu",
+     "label": "aqu - aquifer"
+    },
+    {
+     "value": "cha",
+     "label": "cha - channel"
+    },
+    {
+     "value": "res",
+     "label": "res - reservoir"
+    },
+    {
+     "value": "rec",
+     "label": "rec - recall"
+    },
+    {
+     "value": "exc",
+     "label": "exc - export coefficients"
+    },
+    {
+     "value": "dr",
+     "label": "dr - delivery ratio"
+    },
+    {
+     "value": "out",
+     "label": "out - outlet"
+    },
+    {
+     "value": "sdc",
+     "label": "sdc - swat-deg channel"
+    }
+   ]
+  }
+ },
+ "channel-lte.cha": {
+  "id": {
+   "label": "ID",
+   "desc": "Unique numeric record identifier for the channel."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Unique channel name (record key)."
+  },
+  "cha_ini": {
+   "label": "Initial Properties",
+   "desc": "Name reference to an initial.cha (init_cha) record setting the channel's initial organic/mineral, pesticide, pathogen, heavy-metal and salt state; 'null' if none."
+  },
+  "cha_hyd": {
+   "label": "Hydrology/Sediment Properties",
+   "desc": "Name reference to a hyd-sed-lte.cha (hyd_sed_lte_cha) record defining channel hydraulic geometry and sediment/erosion parameters."
+  },
+  "cha_sed": {
+   "label": "Sediment Properties",
+   "desc": "Name reference to a sediment.cha record; 'null' for LTE channels since hydrology and sediment are combined in hyd-sed-lte (no Sediment selector is shown in the LTE editor form)."
+  },
+  "cha_nut": {
+   "label": "Nutrients Properties",
+   "desc": "Name reference to a nutrients.cha (nut_cha) record defining in-channel nutrient/QUAL2E reaction parameters; 'null' if none."
+  }
+ },
+ "hyd-sed-lte.cha": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the hydrology/sediment property set (record key)."
+  },
+  "order": {
+   "label": "Stream Order",
+   "desc": "Stream order of the channel."
+  },
+  "wd": {
+   "label": "Width",
+   "unit": "m",
+   "desc": "Channel width."
+  },
+  "dp": {
+   "label": "Depth",
+   "unit": "m",
+   "desc": "Channel depth."
+  },
+  "slp": {
+   "label": "Slope",
+   "unit": "m/m",
+   "desc": "Channel bed slope."
+  },
+  "len": {
+   "label": "Length",
+   "unit": "km",
+   "desc": "Channel length."
+  },
+  "mann": {
+   "label": "Manning's n",
+   "desc": "Manning's roughness coefficient for the channel."
+  },
+  "k": {
+   "label": "Bottom Conductivity",
+   "unit": "mm/day",
+   "desc": "Effective hydraulic conductivity of the channel bottom."
+  },
+  "erod_fact": {
+   "label": "Erodibility Factor",
+   "desc": "Channel erodibility factor (0 = non-erosive channel; 1 = no resistance to erosion)."
+  },
+  "cov_fact": {
+   "label": "Cover Factor",
+   "desc": "Channel cover factor (0 = channel completely protected from erosion by cover; 1 = no vegetative cover on channel)."
+  },
+  "sinu": {
+   "label": "Sinuosity",
+   "desc": "Channel sinuosity - ratio of channel length to straight-line length."
+  },
+  "eq_slp": {
+   "label": "Equilibrium Slope",
+   "unit": "m/m",
+   "desc": "Equilibrium channel slope."
+  },
+  "d50": {
+   "label": "Median Sediment Size (D50)",
+   "unit": "mm",
+   "desc": "Median sediment particle size."
+  },
+  "clay": {
+   "label": "Clay Percent",
+   "unit": "%",
+   "desc": "Clay percent of channel bank and bed."
+  },
+  "carbon": {
+   "label": "Carbon Percent",
+   "unit": "%",
+   "desc": "Carbon percent of channel bank and bed."
+  },
+  "dry_bd": {
+   "label": "Dry Bulk Density",
+   "unit": "t/m3",
+   "desc": "Dry bulk density of channel bank and bed material."
+  },
+  "side_slp": {
+   "label": "Side Slope",
+   "desc": "Channel side slope."
+  },
+  "bankfull_flo": {
+   "label": "Bankfull Flow Rate",
+   "desc": "Bank-full flow rate of the channel."
+  },
+  "fps": {
+   "label": "Floodplain Slope",
+   "unit": "m/m",
+   "desc": "Floodplain slope."
+  },
+  "fpn": {
+   "label": "Floodplain Manning's n",
+   "desc": "Manning's roughness coefficient for the floodplain."
+  },
+  "n_conc": {
+   "label": "Bank N Concentration",
+   "unit": "mg/kg",
+   "desc": "Nitrogen concentration in the channel bank."
+  },
+  "p_conc": {
+   "label": "Bank P Concentration",
+   "unit": "mg/kg",
+   "desc": "Phosphorus concentration in the channel bank."
+  },
+  "p_bio": {
+   "label": "Bio-available Bank P Fraction",
+   "unit": "fraction",
+   "desc": "Fraction of phosphorus in the bank that is bio-available."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional free-text description of the record."
+  }
+ },
+ "initial.cha": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the channel initial-conditions set (record key)."
+  },
+  "org_min": {
+   "label": "Organic Mineral Properties",
+   "desc": "Name reference to an om_water_ini record setting initial organic/mineral water constituents; 'no_init' by default, or 'null' if none."
+  },
+  "pest": {
+   "label": "Pesticide Properties",
+   "desc": "Name reference to a pest_water_ini record for initial pesticide concentrations; 'null' if none."
+  },
+  "path": {
+   "label": "Pathogen Properties",
+   "desc": "Name reference to a path_water_ini record for initial pathogen concentrations; 'null' if none."
+  },
+  "hmet": {
+   "label": "Heavy Metal Properties",
+   "desc": "Name reference to an hmet_water_ini record for initial heavy-metal concentrations; 'null' if none (field hidden/inactive in current editor build)."
+  },
+  "salt": {
+   "label": "Salt Properties",
+   "desc": "Name reference to a salt_channel_ini record for initial salt-ion concentrations; 'null' if none."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional free-text description of the record."
+  }
+ },
+ "nutrients.cha": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the channel nutrient property set (record key)."
+  },
+  "plt_n": {
+   "label": "Organic N Concentration",
+   "unit": "ppm",
+   "desc": "Channel organic nitrogen concentration."
+  },
+  "ptl_p": {
+   "label": "Organic P Concentration",
+   "unit": "ppm",
+   "desc": "Channel organic phosphorus concentration."
+  },
+  "alg_stl": {
+   "label": "Algal Settling Rate",
+   "unit": "m/day",
+   "desc": "Local algal settling rate in the reach."
+  },
+  "ben_disp": {
+   "label": "Benthos Dissolved P Source Rate",
+   "unit": "mg/(m2·day)",
+   "desc": "Benthos source rate for dissolved phosphorus in the reach."
+  },
+  "ben_nh3n": {
+   "label": "Benthos NH3-N Source Rate",
+   "unit": "mg/(m2·day)",
+   "desc": "Benthos source rate for NH3-N in the reach."
+  },
+  "ptln_stl": {
+   "label": "Organic N Settling Rate",
+   "unit": "1/day",
+   "desc": "Organic nitrogen settling rate in the reach."
+  },
+  "ptlp_stl": {
+   "label": "Organic P Settling Rate",
+   "unit": "1/day",
+   "desc": "Organic phosphorus settling rate in the reach."
+  },
+  "cst_stl": {
+   "label": "Constituent Settling Rate",
+   "unit": "1/day",
+   "desc": "Arbitrary non-conservative constituent settling rate in the reach."
+  },
+  "ben_cst": {
+   "label": "Benthal Constituent Source Rate",
+   "unit": "mg/(m2·day)",
+   "desc": "Benthal source rate for arbitrary non-conservative constituent in the reach."
+  },
+  "cbn_bod_co": {
+   "label": "CBOD Deoxygenation Rate",
+   "unit": "1/day",
+   "desc": "CBOD deoxygenation rate in the reach at 20 deg C."
+  },
+  "air_rt": {
+   "label": "Reaeration Rate",
+   "unit": "1/day",
+   "desc": "Reaeration rate (Fickian diffusion) in the reach at 20 deg C."
+  },
+  "cbn_bod_stl": {
+   "label": "CBOD Settling Loss Rate",
+   "unit": "1/day",
+   "desc": "Rate of loss of CBOD due to settling in the reach at 20 deg C."
+  },
+  "ben_bod": {
+   "label": "Sediment Oxygen Demand Rate",
+   "unit": "mg O2/(m2·day)",
+   "desc": "Sediment oxygen demand rate in the reach at 20 deg C."
+  },
+  "bact_die": {
+   "label": "Coliform Die-off Rate",
+   "unit": "1/day",
+   "desc": "Coliform die-off rate in the reach."
+  },
+  "cst_decay": {
+   "label": "Constituent Decay Rate",
+   "unit": "1/day",
+   "desc": "Decay rate for arbitrary non-conservative constituent in the reach."
+  },
+  "nh3n_no2n": {
+   "label": "NH3 to NO2 Oxidation Rate",
+   "unit": "1/day",
+   "desc": "Biological oxidation rate of NH3 to NO2 in the reach at 20 deg C."
+  },
+  "no2n_no3n": {
+   "label": "NO2 to NO3 Oxidation Rate",
+   "unit": "1/day",
+   "desc": "Biological oxidation rate of NO2 to NO3 in the reach at 20 deg C."
+  },
+  "ptln_nh3n": {
+   "label": "Organic N Hydrolysis Rate",
+   "unit": "1/day",
+   "desc": "Hydrolysis rate of organic N to ammonia in the reach at 20 deg C."
+  },
+  "ptlp_solp": {
+   "label": "Organic P Decay Rate",
+   "unit": "1/day",
+   "desc": "Decay rate of organic P to dissolved P in the reach at 20 deg C."
+  },
+  "q2e_lt": {
+   "label": "QUAL2E Light Averaging Option",
+   "desc": "QUAL2E light averaging option.",
+   "options": [
+    {
+     "value": "1",
+     "label": "1 - One day / steady temp"
+    },
+    {
+     "value": "2",
+     "label": "2 - One day user value"
+    },
+    {
+     "value": "3",
+     "label": "3 - Hourly / steady temp"
+    },
+    {
+     "value": "4",
+     "label": "4 - Hourly / single value"
+    }
+   ]
+  },
+  "q2e_alg": {
+   "label": "QUAL2E Algal Growth Option",
+   "desc": "QUAL2E option for calculating the local specific growth rate of algae.",
+   "options": [
+    {
+     "value": "1",
+     "label": "1 - Multiplicative"
+    },
+    {
+     "value": "2",
+     "label": "2 - Limiting nutrient"
+    },
+    {
+     "value": "3",
+     "label": "3 - Harmonic mean"
+    }
+   ]
+  },
+  "chla_alg": {
+   "label": "Chlorophyll-a to Algal Biomass Ratio",
+   "unit": "ug chla/mg alg",
+   "desc": "Ratio of chlorophyll-a to algal biomass."
+  },
+  "alg_n": {
+   "label": "Algal Biomass N Fraction",
+   "unit": "mg N/mg alg",
+   "desc": "Fraction of algal biomass that is nitrogen."
+  },
+  "alg_p": {
+   "label": "Algal Biomass P Fraction",
+   "unit": "mg P/mg alg",
+   "desc": "Fraction of algal biomass that is phosphorus."
+  },
+  "alg_o2_prod": {
+   "label": "O2 Production per Photosynthesis",
+   "unit": "mg O2/mg alg",
+   "desc": "Oxygen production rate per unit of algal photosynthesis."
+  },
+  "alg_o2_resp": {
+   "label": "O2 Uptake per Algal Respiration",
+   "unit": "mg O2/mg alg",
+   "desc": "Oxygen uptake rate per unit of algal respiration."
+  },
+  "o2_nh3n": {
+   "label": "O2 Uptake per NH3 Oxidation",
+   "unit": "mg O2/mg N",
+   "desc": "Oxygen uptake rate per unit of NH3 nitrogen oxidation."
+  },
+  "o2_no2n": {
+   "label": "O2 Uptake per NO2 Oxidation",
+   "unit": "mg O2/mg N",
+   "desc": "Oxygen uptake rate per unit of NO2 nitrogen oxidation."
+  },
+  "alg_grow": {
+   "label": "Max Algal Growth Rate",
+   "unit": "1/day",
+   "desc": "Maximum specific algal growth rate."
+  },
+  "alg_resp": {
+   "label": "Algal Respiration Rate",
+   "unit": "1/day",
+   "desc": "Algal respiration rate."
+  },
+  "slr_act": {
+   "label": "Photosynthetically Active Solar Fraction",
+   "unit": "fraction",
+   "desc": "Fraction of solar radiation (from the temperature heat balance) that is photosynthetically active."
+  },
+  "lt_co": {
+   "label": "Light Half-saturation Coefficient",
+   "unit": "MJ/(m2·hr)",
+   "desc": "Half-saturation coefficient for light."
+  },
+  "const_n": {
+   "label": "N Half-saturation Constant",
+   "unit": "mg N/L",
+   "desc": "Michaelis-Menten half-saturation constant for nitrogen."
+  },
+  "const_p": {
+   "label": "P Half-saturation Constant",
+   "unit": "mg P/L",
+   "desc": "Michaelis-Menten half-saturation constant for phosphorus."
+  },
+  "lt_nonalg": {
+   "label": "Non-algal Light Extinction Coefficient",
+   "unit": "1/m",
+   "desc": "Non-algal portion of the light extinction coefficient."
+  },
+  "alg_shd_l": {
+   "label": "Linear Algal Self-shading Coefficient",
+   "unit": "1/(m·ug chla/L)",
+   "desc": "Linear algal self-shading coefficient."
+  },
+  "alg_shd_nl": {
+   "label": "Nonlinear Algal Self-shading Coefficient",
+   "unit": "(1/m)(ug chla/L)^(-2/3)",
+   "desc": "Nonlinear algal self-shading coefficient."
+  },
+  "nh3_pref": {
+   "label": "Ammonia Preference Factor",
+   "desc": "Algal preference factor for ammonia."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional free-text description of the record."
+  }
+ },
+ "rout_unit.rtu": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential record number (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Routing unit name; must be unique (max 16 chars)."
+  },
+  "define": {
+   "label": "Definition",
+   "desc": "Name of the routing-unit definition (rout_unit.def); written identically to the routing-unit name."
+  },
+  "dlr": {
+   "label": "Delivery Ratio",
+   "desc": "Delivery-ratio object reference; written 'null' when none. Not exposed in the routing-unit edit form."
+  },
+  "topo": {
+   "label": "Topography Properties",
+   "desc": "Name of the topography.hyd record (Hydrology / Topography) assigned to this routing unit."
+  },
+  "field": {
+   "label": "Field Properties",
+   "desc": "Name of the field.fld record (Hydrology / Fields) assigned to this routing unit."
+  }
+ },
+ "rout_unit.def": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential record number (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Routing-unit definition name; matches the routing-unit name."
+  },
+  "elem_tot": {
+   "label": "Total Elements",
+   "desc": "Number of spatial elements assigned to this routing unit."
+  },
+  "elements": {
+   "label": "Elements",
+   "desc": "List of element IDs (from rout_unit.ele) making up the routing unit, written as compressed ranges."
+  }
+ },
+ "rout_unit.ele": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential record number (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Element name; must be unique (max 16 chars)."
+  },
+  "obj_typ": {
+   "label": "Object Type",
+   "desc": "Type of spatial object this element points to.",
+   "options": [
+    {
+     "value": "hru",
+     "label": "hru - hru"
+    },
+    {
+     "value": "hlt",
+     "label": "hlt - hru_lte"
+    },
+    {
+     "value": "ru",
+     "label": "ru - routing unit"
+    },
+    {
+     "value": "mfl",
+     "label": "mfl - modflow"
+    },
+    {
+     "value": "aqu",
+     "label": "aqu - aquifer"
+    },
+    {
+     "value": "cha",
+     "label": "cha - channel"
+    },
+    {
+     "value": "res",
+     "label": "res - reservoir"
+    },
+    {
+     "value": "rec",
+     "label": "rec - recall"
+    },
+    {
+     "value": "exc",
+     "label": "exc - export coefficients"
+    },
+    {
+     "value": "dr",
+     "label": "dr - delivery ratio"
+    },
+    {
+     "value": "out",
+     "label": "out - outlet"
+    },
+    {
+     "value": "sdc",
+     "label": "sdc - swat-deg channel"
+    }
+   ]
+  },
+  "obj_id": {
+   "label": "Object",
+   "desc": "Sequential ID (within the selected object type) of the referenced object contributing to the routing unit."
+  },
+  "frac": {
+   "label": "Fraction",
+   "desc": "Fraction of the object's area that drains into this routing unit (0-1)."
+  },
+  "dlr": {
+   "label": "Delivery Ratio",
+   "desc": "Delivery-ratio object reference for this element; written '0' when none."
+  }
+ },
+ "ls_unit.ele": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential record number (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Element name; must be unique (max 16 chars)."
+  },
+  "obj_typ": {
+   "label": "Object Type",
+   "desc": "Type of spatial object this landscape-unit element points to.",
+   "options": [
+    {
+     "value": "hru",
+     "label": "hru - hru"
+    },
+    {
+     "value": "hlt",
+     "label": "hlt - hru_lte"
+    },
+    {
+     "value": "ru",
+     "label": "ru - routing unit"
+    },
+    {
+     "value": "mfl",
+     "label": "mfl - modflow"
+    },
+    {
+     "value": "aqu",
+     "label": "aqu - aquifer"
+    },
+    {
+     "value": "cha",
+     "label": "cha - channel"
+    },
+    {
+     "value": "res",
+     "label": "res - reservoir"
+    },
+    {
+     "value": "rec",
+     "label": "rec - recall"
+    },
+    {
+     "value": "exc",
+     "label": "exc - export coefficients"
+    },
+    {
+     "value": "dr",
+     "label": "dr - delivery ratio"
+    },
+    {
+     "value": "out",
+     "label": "out - outlet"
+    },
+    {
+     "value": "sdc",
+     "label": "sdc - swat-deg channel"
+    }
+   ]
+  },
+  "obj_typ_no": {
+   "label": "Object",
+   "desc": "Sequential ID (within the selected object type) of the referenced object."
+  },
+  "bsn_frac": {
+   "label": "Basin Fraction",
+   "desc": "Fraction of the whole basin represented by this element (0-1)."
+  },
+  "sub_frac": {
+   "label": "Subbasin Fraction",
+   "desc": "Fraction of the subbasin represented by this element (0-1)."
+  },
+  "reg_frac": {
+   "label": "Region Fraction",
+   "desc": "Fraction of the region/landscape unit represented by this element (0-1)."
+  }
+ },
+ "aqu_catunit.ele": {
+  "id": {
+   "label": "ID",
+   "desc": "Sequential record number (record key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Aquifer catchment-unit element name (aquifer name)."
+  },
+  "obj_typ": {
+   "label": "Object Type",
+   "desc": "Type of object referenced; always 'aqu' for this auto-generated file.",
+   "options": [
+    {
+     "value": "aqu",
+     "label": "aqu - aquifer"
+    }
+   ]
+  },
+  "obj_typ_no": {
+   "label": "Object",
+   "desc": "Sequential ID of the referenced aquifer."
+  },
+  "bsn_frac": {
+   "label": "Basin Fraction",
+   "desc": "Aquifer area divided by total routing-unit area (0-1)."
+  },
+  "sub_frac": {
+   "label": "Subbasin Fraction",
+   "desc": "Subbasin fraction; always written 0 for aquifer catchment units."
+  },
+  "reg_frac": {
+   "label": "Region Fraction",
+   "desc": "Region fraction; always written 0 for aquifer catchment units."
+  }
+ },
+ "hru-data.hru": {
+  "id": {
+   "label": "ID",
+   "desc": "Numeric record identifier (row key)."
+  },
+  "name": {
+   "label": "Name",
+   "desc": "Unique HRU name (record key)."
+  },
+  "topo": {
+   "label": "Topography Properties",
+   "desc": "Reference to a named record in topography.hyd defining slope/slope-length/topography; object selector, 'null' if unset."
+  },
+  "hydro": {
+   "label": "Hydrology Properties",
+   "desc": "Reference to a named record in hydrology.hyd defining HRU hydrologic response parameters; object selector, 'null' if unset."
+  },
+  "soil": {
+   "label": "Soil Properties",
+   "desc": "Reference to a named soil profile in soils.sol; object selector, 'null' if unset."
+  },
+  "lu_mgt": {
+   "label": "Land Use Management Properties",
+   "desc": "Reference to a named record in landuse.lum defining land use and management for the HRU; object selector, 'null' if unset."
+  },
+  "soil_plant_init": {
+   "label": "Soil Plant Properties",
+   "desc": "Reference to a named record in soil_plant.ini defining initial soil-plant constituent state; object selector, 'null' if unset."
+  },
+  "surf_stor": {
+   "label": "Surface Storage Properties",
+   "desc": "Reference to a named surface-storage/wetland record in wetlands.wet; object selector, 'null' if unset."
+  },
+  "snow": {
+   "label": "Snow Properties",
+   "desc": "Reference to a named record in snow.sno defining snowmelt parameters; object selector, 'null' if unset."
+  },
+  "field": {
+   "label": "Field Properties",
+   "desc": "Reference to a named record in field.fld defining field geometry (length/width/angle); object selector, 'null' if unset."
+  }
+ },
+ "field.fld": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique field name (record key)."
+  },
+  "len": {
+   "label": "Field Length",
+   "unit": "m",
+   "desc": "Field length used for field geometry / wind erosion. Default 500."
+  },
+  "wd": {
+   "label": "Field Width",
+   "unit": "m",
+   "desc": "Field width used for field geometry / wind erosion. Default 100."
+  },
+  "ang": {
+   "label": "Field Angle",
+   "unit": "deg",
+   "desc": "Field orientation angle. Default 30."
+  }
+ },
+ "initial.aqu": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the aquifer initialization record (e.g. 'initaqu1')."
+  },
+  "org_min": {
+   "label": "Organic Mineral Properties",
+   "desc": "Auto-complete reference to an om_water.ini (om_water_ini) record giving initial organic/mineral constituent amounts in the aquifer (e.g. 'no_init')."
+  },
+  "pest": {
+   "label": "Pesticide Properties",
+   "desc": "Reference to a pest_water.ini record for initial pesticide concentrations; requires Constituents / Pesticides enabled ('null' if unused)."
+  },
+  "path": {
+   "label": "Pathogen Properties",
+   "desc": "Reference to a path_water.ini record for initial pathogen concentrations; requires Constituents / Pathogens ('null' if unused)."
+  },
+  "hmet": {
+   "label": "Heavy Metal Properties",
+   "desc": "Reference to an hmet_water.ini record for initial heavy-metal concentrations ('null' if unused)."
+  },
+  "salt": {
+   "label": "Salt Properties",
+   "desc": "Reference to a salt_aqu.ini (salt_aqu_ini) record for initial aquifer salt concentrations; requires Constituents / Salts ('null' if unused)."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional free-text description of the record ('null' if blank)."
+  }
+ },
+ "soil_plant.ini": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the soil-plant initialization record (e.g. 'soilplant1')."
+  },
+  "sw_frac": {
+   "label": "Soil Water Fraction",
+   "desc": "Initial soil water content as a fraction of field capacity (0-1); plain numeric input in the editor."
+  },
+  "nutrients": {
+   "label": "Nutrients",
+   "desc": "Auto-complete reference to a nutrients.sol (soil_nut) record giving initial soil nutrient properties (e.g. 'soilnut1')."
+  },
+  "pest": {
+   "label": "Pesticide Properties",
+   "desc": "Reference to a pest_water.ini record for initial pesticide concentrations; requires Constituents / Pesticides ('null' if unused)."
+  },
+  "path": {
+   "label": "Pathogen Properties",
+   "desc": "Reference to a path_water.ini record for initial pathogen concentrations; requires Constituents / Pathogens ('null' if unused)."
+  },
+  "hmet": {
+   "label": "Heavy Metal Properties",
+   "desc": "Reference to an hmet_water.ini record for initial heavy-metal concentrations ('null' if unused)."
+  },
+  "salt": {
+   "label": "Salt Properties",
+   "desc": "Reference to a salt_hru.ini (salt_hru_ini) record for initial HRU salt concentrations; requires Constituents / Salts ('null' if unused)."
+  }
+ },
+ "om_water.ini": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the organic-mineral water record (e.g. 'no_init')."
+  },
+  "flo": {
+   "label": "Volume Of Water",
+   "unit": "m³",
+   "desc": "Initial volume of water."
+  },
+  "sed": {
+   "label": "Sediment",
+   "unit": "metric tons",
+   "desc": "Initial sediment amount."
+  },
+  "orgn": {
+   "label": "Organic Nitrogen",
+   "unit": "kg N",
+   "desc": "Initial organic nitrogen amount."
+  },
+  "sedp": {
+   "label": "Organic Phosphorus",
+   "unit": "kg P",
+   "desc": "Initial organic (sediment-attached) phosphorus amount."
+  },
+  "no3": {
+   "label": "Nitrate",
+   "unit": "kg N",
+   "desc": "Initial nitrate (NO3) amount."
+  },
+  "solp": {
+   "label": "Mineral (Soluble) Phosphorus",
+   "unit": "kg P",
+   "desc": "Initial soluble mineral phosphorus amount."
+  },
+  "chl_a": {
+   "label": "Chlorophyll-a",
+   "unit": "kg",
+   "desc": "Initial chlorophyll-a amount."
+  },
+  "nh3": {
+   "label": "Ammonia",
+   "unit": "kg N",
+   "desc": "Initial ammonia (NH3) amount."
+  },
+  "no2": {
+   "label": "Nitrite",
+   "unit": "kg N",
+   "desc": "Initial nitrite (NO2) amount; editor vardef description reads 'Nitrogen dioxide'."
+  },
+  "cbn_bod": {
+   "label": "Carbonaceous Biological Oxygen Demand",
+   "unit": "kg",
+   "desc": "Initial carbonaceous biological oxygen demand (CBOD)."
+  },
+  "dis_ox": {
+   "label": "Dissolved Oxygen",
+   "unit": "kg",
+   "desc": "Initial dissolved oxygen amount."
+  },
+  "san": {
+   "label": "Detached Sand",
+   "unit": "tons",
+   "desc": "Initial detached sand amount."
+  },
+  "sil": {
+   "label": "Detached Silt",
+   "unit": "tons",
+   "desc": "Initial detached silt amount."
+  },
+  "cla": {
+   "label": "Detached Clay",
+   "unit": "tons",
+   "desc": "Initial detached clay amount."
+  },
+  "sag": {
+   "label": "Detached Small Aggregate",
+   "unit": "tons",
+   "desc": "Initial detached small-aggregate amount."
+  },
+  "lag": {
+   "label": "Detached Large Aggregate",
+   "unit": "tons",
+   "desc": "Initial detached large-aggregate amount."
+  },
+  "grv": {
+   "label": "Gravel",
+   "unit": "tons",
+   "desc": "Initial gravel amount."
+  },
+  "tmp": {
+   "label": "Temperature",
+   "unit": "°C",
+   "desc": "Initial water temperature."
+  },
+  "c": {
+   "label": "C",
+   "desc": "Carbon term (no label or units defined in the editor vardefs)."
+  }
+ },
+ "plant.ini": {
+  "pcom_name": {
+   "label": "Name",
+   "desc": "Unique name of the plant community (e.g. 'alfa_comm', 'csil_comm')."
+  },
+  "plt_cnt": {
+   "label": "Plant Count",
+   "desc": "Number of plants in the community; written as the count of plant rows, not directly edited."
+  },
+  "rot_yr_ini": {
+   "label": "Initial Rotation Year",
+   "desc": "Rotation year the community starts in at the beginning of the simulation (integer)."
+  },
+  "plt_name": {
+   "label": "Plant",
+   "desc": "Name of the plant/land-cover for this community member (auto-complete reference to a plants.plt database record)."
+  },
+  "lc_status": {
+   "label": "Land Cover",
+   "desc": "Whether land cover is growing at simulation start. Stored in-file as y/n (write_bool_yn); editor renders as Yes/No.",
+   "options": [
+    {
+     "value": "y",
+     "label": "Yes"
+    },
+    {
+     "value": "n",
+     "label": "No"
+    }
+   ]
+  },
+  "lai_init": {
+   "label": "Initial LAI",
+   "unit": "m²/m²",
+   "desc": "Initial leaf area index (editor column 'Init. LAI')."
+  },
+  "bm_init": {
+   "label": "Initial Biomass",
+   "unit": "kg/ha",
+   "desc": "Initial dry-weight biomass (editor column 'Init. Biomass')."
+  },
+  "phu_init": {
+   "label": "Initial PHU Fraction",
+   "desc": "Initial fraction of plant heat units (PHU) already accumulated (editor column 'Init. PHU Frac.'); no unit defined in the editor vardefs."
+  },
+  "plnt_pop": {
+   "label": "Plant Population",
+   "desc": "Initial plant population (editor column 'Plant Pop.')."
+  },
+  "yrs_init": {
+   "label": "Age (Years)",
+   "desc": "Initial plant age expressed as fraction of years to maturity (editor column 'Age (yrs)'); no unit defined in the editor vardefs."
+  },
+  "rsd_init": {
+   "label": "Initial Residue Cover",
+   "unit": "kg/ha",
+   "desc": "Initial surface residue cover (editor column 'Init. Residue Cover')."
+  }
+ },
+ "tiledrain.str": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique tile drain structure name (record key)."
+  },
+  "dp": {
+   "label": "Drain Depth",
+   "unit": "mm",
+   "desc": "Depth of drain tube from the soil surface."
+  },
+  "t_fc": {
+   "label": "Time to Drain to Field Capacity",
+   "unit": "hrs",
+   "desc": "Time to drain soil to field capacity."
+  },
+  "lag": {
+   "label": "Drain Tile Lag Time",
+   "unit": "hrs",
+   "desc": "Drain tile lag time."
+  },
+  "rad": {
+   "label": "Effective Radius of Drains",
+   "unit": "mm",
+   "desc": "Effective radius of drains."
+  },
+  "dist": {
+   "label": "Distance Between Drains",
+   "unit": "m",
+   "desc": "Distance between two drain tubes or tiles."
+  },
+  "drain": {
+   "label": "Drainage Coefficient",
+   "unit": "mm/day",
+   "desc": "Drainage coefficient."
+  },
+  "pump": {
+   "label": "Pump Capacity",
+   "unit": "mm/hr",
+   "desc": "Pump capacity."
+  },
+  "lat_ksat": {
+   "label": "Lateral Ksat Factor",
+   "desc": "Multiplication factor to determine lateral ksat from the SWAT ksat input value."
+  }
+ },
+ "septic.str": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique septic system name (record key)."
+  },
+  "typ": {
+   "label": "Septic System Type",
+   "desc": "Septic system type."
+  },
+  "yr": {
+   "label": "Operational Year",
+   "desc": "Year the septic system became operational."
+  },
+  "operation": {
+   "label": "Operation Flag",
+   "desc": "Septic system operation flag (1 = active)."
+  },
+  "residents": {
+   "label": "Number of Residents",
+   "desc": "Number of permanent residents in the house."
+  },
+  "area": {
+   "label": "Drainfield Area",
+   "unit": "m^2",
+   "desc": "Average area of drainfield of individual septic systems."
+  },
+  "t_fail": {
+   "label": "Time Until Repair",
+   "unit": "days",
+   "desc": "Time until failing systems get fixed."
+  },
+  "dp_bioz": {
+   "label": "Biozone Depth",
+   "unit": "mm",
+   "desc": "Depth to the top of the biozone layer from the ground surface."
+  },
+  "thk_bioz": {
+   "label": "Biozone Thickness",
+   "unit": "mm",
+   "desc": "Thickness of the biozone layer."
+  },
+  "cha_dist": {
+   "label": "Distance to Stream",
+   "unit": "km",
+   "desc": "Distance from the septic system to the stream."
+  },
+  "sep_dens": {
+   "label": "Septic System Density",
+   "desc": "Number of septic systems per square kilometer."
+  },
+  "bm_dens": {
+   "label": "Biomass Density",
+   "unit": "kg/m^3",
+   "desc": "Density of biomass."
+  },
+  "bod_decay": {
+   "label": "BOD Decay Rate",
+   "unit": "m^3/day",
+   "desc": "BOD decay rate coefficient."
+  },
+  "bod_conv": {
+   "label": "BOD Conversion Factor",
+   "desc": "Conversion factor representing the proportion of mass bacterial growth and mass BOD degraded in the STE."
+  },
+  "fc_lin": {
+   "label": "Field Capacity Linear Coefficient",
+   "desc": "Linear coefficient for calculation of field capacity in the biozone."
+  },
+  "fc_exp": {
+   "label": "Field Capacity Exponential Coefficient",
+   "desc": "Exponential coefficient for calculation of field capacity in the biozone."
+  },
+  "fecal_decay": {
+   "label": "Fecal Coliform Decay Rate",
+   "unit": "m^3/day",
+   "desc": "Fecal coliform bacteria decay rate coefficient."
+  },
+  "tds_conv": {
+   "label": "TDS Conversion Factor",
+   "desc": "Conversion factor for plaque from TDS."
+  },
+  "mort": {
+   "label": "Mortality Rate Coefficient",
+   "desc": "Mortality rate coefficient."
+  },
+  "resp": {
+   "label": "Respiration Rate Coefficient",
+   "desc": "Respiration rate coefficient."
+  },
+  "slough1": {
+   "label": "Slough-off Coefficient 1",
+   "desc": "Slough-off calibration parameter."
+  },
+  "slough2": {
+   "label": "Slough-off Coefficient 2",
+   "desc": "Slough-off calibration parameter."
+  },
+  "nit": {
+   "label": "Nitrification Rate Coefficient",
+   "desc": "Nitrification rate coefficient."
+  },
+  "denit": {
+   "label": "Denitrification Rate Coefficient",
+   "desc": "Denitrification rate coefficient."
+  },
+  "p_sorp": {
+   "label": "P Sorption Coefficient",
+   "unit": "L/kg",
+   "desc": "Linear P sorption distribution coefficient."
+  },
+  "p_sorp_max": {
+   "label": "Maximum P Sorption Capacity",
+   "unit": "mg P/kg soil",
+   "desc": "Maximum P sorption capacity."
+  },
+  "solp_slp": {
+   "label": "Soluble P Equation Slope",
+   "desc": "Slope of the linear effluent soluble P equation."
+  },
+  "solp_int": {
+   "label": "Soluble P Equation Intercept",
+   "desc": "Intercept of the linear effluent soluble P equation."
+  }
+ },
+ "filterstrip.str": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique filter strip name (record key)."
+  },
+  "flag": {
+   "label": "Filter Strip Flag",
+   "desc": "Filter strip flag (1 = active; 0 = inactive).",
+   "options": [
+    {
+     "value": "0",
+     "label": "0 - Inactive"
+    },
+    {
+     "value": "1",
+     "label": "1 - Active"
+    }
+   ]
+  },
+  "fld_vfs": {
+   "label": "Field to Filter Strip Area Ratio",
+   "desc": "Ratio of field area to filter strip area."
+  },
+  "con_vfs": {
+   "label": "Concentrated Flow Fraction",
+   "desc": "Fraction of flow entering the most concentrated 10% of the filter strip."
+  },
+  "cha_q": {
+   "label": "Channelized Flow Fraction",
+   "desc": "Fraction of fully channelized flow."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional free-text description of the filter strip."
+  }
+ },
+ "grassedww.str": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique grassed waterway name (record key)."
+  },
+  "flag": {
+   "label": "Grassed Waterway Flag",
+   "desc": "Grassed waterway flag (1 = active; 0 = inactive).",
+   "options": [
+    {
+     "value": "0",
+     "label": "0 - Inactive"
+    },
+    {
+     "value": "1",
+     "label": "1 - Active"
+    }
+   ]
+  },
+  "mann": {
+   "label": "Manning's n",
+   "desc": "Manning's n for the grassed waterway."
+  },
+  "sed_co": {
+   "label": "Sediment Transport Coefficient",
+   "desc": "Sediment transport coefficient defined by user."
+  },
+  "dp": {
+   "label": "Depth",
+   "unit": "m",
+   "desc": "Depth of the grassed waterway."
+  },
+  "wd": {
+   "label": "Width",
+   "unit": "m",
+   "desc": "Width of the grassed waterway."
+  },
+  "len": {
+   "label": "Length",
+   "unit": "km",
+   "desc": "Length of the grassed waterway."
+  },
+  "slp": {
+   "label": "Slope",
+   "unit": "m/m",
+   "desc": "Slope of the grassed waterway."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional free-text description of the grassed waterway."
+  }
+ },
+ "bmpuser.str": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique user BMP name (record key)."
+  },
+  "flag": {
+   "label": "BMP Flag",
+   "desc": "BMP flag (1 = active; 2 = inactive).",
+   "options": [
+    {
+     "value": "1",
+     "label": "1 - Active"
+    },
+    {
+     "value": "2",
+     "label": "2 - Inactive"
+    }
+   ]
+  },
+  "sed_eff": {
+   "label": "Sediment Removal Fraction",
+   "desc": "Fraction sediment removal by BMP."
+  },
+  "ptlp_eff": {
+   "label": "Particulate P Removal Fraction",
+   "desc": "Fraction particulate P removal by BMP."
+  },
+  "solp_eff": {
+   "label": "Soluble P Removal Fraction",
+   "desc": "Fraction soluble P removal by BMP."
+  },
+  "ptln_eff": {
+   "label": "Particulate N Removal Fraction",
+   "desc": "Fraction particulate N removal by BMP."
+  },
+  "soln_eff": {
+   "label": "Soluble N Removal Fraction",
+   "desc": "Fraction soluble N removal by BMP."
+  },
+  "bact_eff": {
+   "label": "Bacteria Removal Fraction",
+   "desc": "Fraction bacteria removal by BMP."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional free-text description of the user BMP."
+  }
+ },
+ "tillage.til": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the tillage operation (record key)."
+  },
+  "mix_eff": {
+   "label": "Mixing Efficiency",
+   "desc": "Mixing efficiency of tillage operation (dimensionless fraction, 0-1)."
+  },
+  "mix_dp": {
+   "label": "Mixing Depth",
+   "unit": "mm",
+   "desc": "Depth of mixing caused by tillage (0-750)."
+  },
+  "rough": {
+   "label": "Random Roughness",
+   "unit": "mm",
+   "desc": "Random roughness of the surface after tillage (0-200)."
+  },
+  "ridge_ht": {
+   "label": "Ridge Height",
+   "unit": "mm",
+   "desc": "Ridge height."
+  },
+  "ridge_sp": {
+   "label": "Ridge Interval / Row Spacing",
+   "unit": "mm",
+   "desc": "Ridge interval (or row spacing)."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Free-text description of the tillage operation."
+  }
+ },
+ "pesticide.pes": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the pesticide/chemical (record key)."
+  },
+  "soil_ads": {
+   "label": "Soil Adsorption Coefficient",
+   "unit": "(mg/kg)/(mg/L)",
+   "desc": "Soil adsorption coefficient normalized for soil organic carbon content."
+  },
+  "frac_wash": {
+   "label": "Wash-off Fraction",
+   "desc": "Fraction of pesticide on foliage that is washed off by a rainfall event (0-1)."
+  },
+  "hl_foliage": {
+   "label": "Foliar Half-life",
+   "unit": "days",
+   "desc": "Half-life of pesticide on foliage."
+  },
+  "hl_soil": {
+   "label": "Soil Half-life",
+   "unit": "days",
+   "desc": "Half-life of pesticide in soil."
+  },
+  "solub": {
+   "label": "Water Solubility",
+   "unit": "mg/L (ppm)",
+   "desc": "Solubility of the chemical in water."
+  },
+  "aq_hlife": {
+   "label": "Aquatic Half-life",
+   "unit": "days",
+   "desc": "Aquatic pesticide reaction half-life (days)."
+  },
+  "aq_volat": {
+   "label": "Aquatic Volatilization Coefficient",
+   "unit": "m/day",
+   "desc": "Aquatic volatilization coefficient."
+  },
+  "mol_wt": {
+   "label": "Molecular Weight",
+   "desc": "Molecular weight, used to calculate mixing efficiency."
+  },
+  "aq_resus": {
+   "label": "Aquatic Resuspension Velocity",
+   "unit": "m/day",
+   "desc": "Aquatic resuspension velocity for pesticide sorbed to sediment."
+  },
+  "aq_settle": {
+   "label": "Aquatic Settling Velocity",
+   "unit": "m/day",
+   "desc": "Aquatic settling velocity for pesticide sorbed to sediment."
+  },
+  "ben_act_dep": {
+   "label": "Benthic Active Layer Depth",
+   "unit": "m/day",
+   "desc": "Depth of the active benthic layer (vardef units read 'm/day' - an editor DB inconsistency)."
+  },
+  "ben_bury": {
+   "label": "Benthic Burial Velocity",
+   "unit": "m/day",
+   "desc": "Burial velocity in benthic sediment."
+  },
+  "ben_hlife": {
+   "label": "Benthic Half-life",
+   "unit": "days",
+   "desc": "Reaction (half-life) in benthic sediment (days)."
+  },
+  "pl_uptake": {
+   "label": "Plant Uptake Factor",
+   "desc": "Plant uptake factor for the pesticide."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Free-text description of the pesticide."
+  }
+ },
+ "urban.urb": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the urban land type (record key)."
+  },
+  "frac_imp": {
+   "label": "Fraction Impervious",
+   "desc": "Fraction of HRU area that is impervious/impermeable (0-1)."
+  },
+  "frac_dc_imp": {
+   "label": "Fraction Directly Connected Impervious",
+   "desc": "Fraction of HRU classified as directly connected impervious area (0-1)."
+  },
+  "curb_den": {
+   "label": "Curb Length Density",
+   "unit": "km/ha",
+   "desc": "Curb length density."
+  },
+  "urb_wash": {
+   "label": "Wash-off Coefficient",
+   "unit": "1/mm",
+   "desc": "Wash-off coefficient for removal of constituents from an impervious surface."
+  },
+  "dirt_max": {
+   "label": "Maximum Solids Buildup",
+   "unit": "kg/curb km",
+   "desc": "Maximum amount of solids allowed to build up on impervious surfaces."
+  },
+  "t_halfmax": {
+   "label": "Time to Half-max Buildup",
+   "unit": "days",
+   "desc": "Time for solids on impervious areas to build up to 1/2 of the maximum level."
+  },
+  "conc_totn": {
+   "label": "Total N Concentration",
+   "unit": "mg/kg",
+   "desc": "Concentration of total N in the suspended solid load from impervious areas."
+  },
+  "conc_totp": {
+   "label": "Total P Concentration",
+   "unit": "mg/kg",
+   "desc": "Concentration of total P in the suspended solid load from impervious areas."
+  },
+  "conc_no3n": {
+   "label": "NO3-N Concentration",
+   "unit": "mg/kg",
+   "desc": "Concentration of NO3-N in the suspended solid load from impervious areas."
+  },
+  "urb_cn": {
+   "label": "Curve Number (Impervious)",
+   "desc": "Moisture condition II curve number for impervious areas (30-100)."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Free-text description of the urban land type."
+  }
+ },
+ "septic.sep": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the septic system water-quality type (record key)."
+  },
+  "q_rate": {
+   "label": "Effluent Flow Rate",
+   "unit": "m^3/day",
+   "desc": "Flow rate of the septic tank effluent per capita."
+  },
+  "bod": {
+   "label": "Biological Oxygen Demand",
+   "unit": "mg/L",
+   "desc": "Biological oxygen demand of the septic tank effluent."
+  },
+  "tss": {
+   "label": "Total Suspended Solids",
+   "unit": "mg/L",
+   "desc": "Concentration of total suspended solids in the septic tank effluent."
+  },
+  "nh4_n": {
+   "label": "NH4-N Concentration",
+   "unit": "mg/L",
+   "desc": "Concentration of ammonium nitrogen (NH4-N) in the septic tank effluent (vardef description mislabels this as 'total phosphorus')."
+  },
+  "no3_n": {
+   "label": "NO3-N Concentration",
+   "unit": "mg/L",
+   "desc": "Concentration of nitrate in the septic tank effluent."
+  },
+  "no2_n": {
+   "label": "NO2-N Concentration",
+   "unit": "mg/L",
+   "desc": "Concentration of nitrite in the septic tank effluent."
+  },
+  "org_n": {
+   "label": "Organic N Concentration",
+   "unit": "mg/L",
+   "desc": "Concentration of organic nitrogen in the septic tank effluent."
+  },
+  "min_p": {
+   "label": "Mineral P Concentration",
+   "unit": "mg/L",
+   "desc": "Concentration of mineral phosphorus in the septic tank effluent."
+  },
+  "org_p": {
+   "label": "Organic P Concentration",
+   "unit": "mg/L",
+   "desc": "Concentration of organic phosphorus in the septic tank effluent."
+  },
+  "fcoli": {
+   "label": "Fecal Coliform Concentration",
+   "unit": "mg/L",
+   "desc": "Concentration of fecal coliform in the septic tank effluent."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Free-text description of the septic system type."
+  }
+ },
+ "harv.ops": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the harvest operation."
+  },
+  "harv_typ": {
+   "label": "Harvest Type",
+   "desc": "Harvest type (selects which plant pool is harvested).",
+   "options": [
+    {
+     "value": "grain",
+     "label": "grain"
+    },
+    {
+     "value": "biomass",
+     "label": "biomass"
+    },
+    {
+     "value": "residue",
+     "label": "residue"
+    },
+    {
+     "value": "tree",
+     "label": "tree"
+    },
+    {
+     "value": "tuber",
+     "label": "tuber"
+    }
+   ]
+  },
+  "harv_idx": {
+   "label": "Harvest Index",
+   "desc": "Harvest index target specified at harvest (kg/ha)/(kg/ha)."
+  },
+  "harv_eff": {
+   "label": "Harvest Efficiency",
+   "desc": "Harvest efficiency."
+  },
+  "harv_bm_min": {
+   "label": "Minimum Biomass to Harvest",
+   "unit": "kg/ha",
+   "desc": "Minimum biomass to allow harvest."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional description of the operation."
+  }
+ },
+ "graze.ops": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the grazing operation."
+  },
+  "fert": {
+   "label": "Fertilizer",
+   "desc": "Fertilizer name (lookup into fertilizer database) for manure deposited during grazing."
+  },
+  "bm_eat": {
+   "label": "Biomass Eaten",
+   "unit": "kg/ha",
+   "desc": "Dry weight of biomass removed by grazing daily."
+  },
+  "bm_tramp": {
+   "label": "Biomass Trampled",
+   "unit": "kg/ha",
+   "desc": "Dry weight of biomass removed by trampling daily."
+  },
+  "man_amt": {
+   "label": "Manure Amount",
+   "unit": "kg/ha",
+   "desc": "Dry weight of manure deposited."
+  },
+  "grz_bm_min": {
+   "label": "Minimum Grazing Biomass",
+   "unit": "kg/ha",
+   "desc": "Minimum plant biomass for grazing to occur."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional description of the operation."
+  }
+ },
+ "chem_app.ops": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the chemical application operation."
+  },
+  "chem_form": {
+   "label": "Chemical Form",
+   "desc": "Chemical form.",
+   "options": [
+    {
+     "value": "solid",
+     "label": "solid"
+    },
+    {
+     "value": "liquid",
+     "label": "liquid"
+    }
+   ]
+  },
+  "app_typ": {
+   "label": "Application Type",
+   "desc": "Application type.",
+   "options": [
+    {
+     "value": "spread",
+     "label": "spread"
+    },
+    {
+     "value": "spray",
+     "label": "spray"
+    },
+    {
+     "value": "inject",
+     "label": "inject"
+    },
+    {
+     "value": "direct",
+     "label": "direct"
+    }
+   ]
+  },
+  "app_eff": {
+   "label": "Application Efficiency",
+   "desc": "Application efficiency."
+  },
+  "foliar_eff": {
+   "label": "Foliar Efficiency",
+   "desc": "Foliar efficiency."
+  },
+  "inject_dp": {
+   "label": "Injection Depth",
+   "unit": "mm",
+   "desc": "Injection depth."
+  },
+  "surf_frac": {
+   "label": "Surface Fraction",
+   "desc": "Surface fraction amount in upper 10mm."
+  },
+  "drift_pot": {
+   "label": "Drift Potential",
+   "desc": "Drift potential."
+  },
+  "aerial_unif": {
+   "label": "Aerial Uniformity",
+   "desc": "Aerial uniformity."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional description of the operation."
+  }
+ },
+ "fire.ops": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the fire (burning) operation."
+  },
+  "chg_cn2": {
+   "label": "Change in Curve Number",
+   "desc": "Change in SCS curve number II value."
+  },
+  "frac_burn": {
+   "label": "Fraction Burned",
+   "desc": "Fraction burned."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional description of the operation."
+  }
+ },
+ "sweep.ops": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique name of the street-sweeping operation."
+  },
+  "swp_eff": {
+   "label": "Sweeping Removal Efficiency",
+   "desc": "Removal efficiency of sweeping operation."
+  },
+  "frac_curb": {
+   "label": "Fraction Curb Sweepable",
+   "desc": "Fraction of the curb length that is sweepable."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Optional description of the operation."
+  }
+ },
+ "landuse.lum": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique land use management record name (record key)."
+  },
+  "cal_group": {
+   "label": "Calibration Group",
+   "desc": "Optional calibration group label used to group HRUs during calibration; 'null' when unused."
+  },
+  "plnt_com": {
+   "label": "Plant Community",
+   "desc": "Reference to a plant community initialization record (plant.ini); 'null' if none."
+  },
+  "mgt": {
+   "label": "Management Schedule",
+   "desc": "Reference to a management schedule (management.sch); 'null' if none."
+  },
+  "cn2": {
+   "label": "Curve Number",
+   "desc": "Reference to a curve number table record (cntable.lum); 'null' if none."
+  },
+  "cons_prac": {
+   "label": "Conservation Practices",
+   "desc": "Reference to a conservation practice record (cons_practice.lum); 'null' if none."
+  },
+  "urban": {
+   "label": "Urban Land Use",
+   "desc": "Reference to an urban land-use record (urban.urb); 'null' if none."
+  },
+  "urb_ro": {
+   "label": "Urban Runoff",
+   "desc": "Urban runoff calculation method for this land use; empty/'null' when not urban.",
+   "options": [
+    {
+     "value": "buildup_washoff",
+     "label": "buildup_washoff"
+    },
+    {
+     "value": "usgs_reg",
+     "label": "usgs_reg"
+    }
+   ]
+  },
+  "ov_mann": {
+   "label": "Overland Flow Manning's n",
+   "desc": "Reference to an overland-flow Manning's n table record (ovn_table.lum); 'null' if none."
+  },
+  "tile": {
+   "label": "Tile Drain",
+   "desc": "Reference to a tile drain structural record (tiledrain.str); 'null' if none."
+  },
+  "sep": {
+   "label": "Septic Tank",
+   "desc": "Reference to a septic tank structural record (septic.str); 'null' if none."
+  },
+  "vfs": {
+   "label": "Filter Strip",
+   "desc": "Reference to a vegetative filter strip structural record (filterstrip.str); 'null' if none."
+  },
+  "grww": {
+   "label": "Grassed Waterway",
+   "desc": "Reference to a grassed waterway structural record (grassedww.str); 'null' if none."
+  },
+  "bmp": {
+   "label": "Best Management Practices",
+   "desc": "Reference to a user best-management-practice structural record (bmpuser.str); 'null' if none."
+  }
+ },
+ "cntable.lum": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique curve number table record name (record key)."
+  },
+  "cn_a": {
+   "label": "Curve Number - Soil Group A",
+   "desc": "SCS runoff curve number for hydrologic soil group A (moisture condition II). Dimensionless, 0-100."
+  },
+  "cn_b": {
+   "label": "Curve Number - Soil Group B",
+   "desc": "SCS runoff curve number for hydrologic soil group B (moisture condition II). Dimensionless, 0-100."
+  },
+  "cn_c": {
+   "label": "Curve Number - Soil Group C",
+   "desc": "SCS runoff curve number for hydrologic soil group C (moisture condition II). Dimensionless, 0-100."
+  },
+  "cn_d": {
+   "label": "Curve Number - Soil Group D",
+   "desc": "SCS runoff curve number for hydrologic soil group D (moisture condition II). Dimensionless, 0-100."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Free-text description of the land cover (e.g. Fallow, Row_crops)."
+  },
+  "treat": {
+   "label": "Treatment",
+   "desc": "Free-text treatment/practice descriptor (e.g. Bare_soil, Crop_residue_cover, Straight_row)."
+  },
+  "cond_cov": {
+   "label": "Hydrologic Condition",
+   "desc": "Free-text hydrologic condition / cover quality descriptor (e.g. Poor, Good, ----)."
+  }
+ },
+ "cons_practice.lum": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique conservation practice record name (record key)."
+  },
+  "usle_p": {
+   "label": "USLE Support Practice Factor (P)",
+   "unit": "frac",
+   "desc": "USLE support/conservation practice factor P; dimensionless, typically 0-1 (1 = no practice)."
+  },
+  "slp_len_max": {
+   "label": "Maximum Slope Length",
+   "unit": "m",
+   "desc": "Maximum USLE slope length for the practice, in meters."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Free-text description of the conservation practice (e.g. Cross_slope_tillage)."
+  }
+ },
+ "ovn_table.lum": {
+  "name": {
+   "label": "Name",
+   "desc": "Unique overland-flow Manning's n table record name (record key)."
+  },
+  "ovn_mean": {
+   "label": "Mean Manning's n",
+   "desc": "Mean Manning's roughness coefficient (n) for overland flow. Dimensionless."
+  },
+  "ovn_min": {
+   "label": "Minimum Manning's n",
+   "desc": "Minimum Manning's roughness coefficient (n) for overland flow. Dimensionless."
+  },
+  "ovn_max": {
+   "label": "Maximum Manning's n",
+   "desc": "Maximum Manning's roughness coefficient (n) for overland flow. Dimensionless."
+  },
+  "description": {
+   "label": "Description",
+   "desc": "Free-text description of the surface cover / tillage condition (e.g. Conventional_tillage_residue)."
+  }
+ },
+ "management.sch": {
+  "name": {
+   "label": "Schedule Name",
+   "desc": "Unique management schedule name (record key). Must be unique."
+  },
+  "numb_ops": {
+   "label": "Number of Operations",
+   "desc": "Count of manual operation rows that follow for this schedule."
+  },
+  "numb_auto": {
+   "label": "Number of Automatic Operations",
+   "desc": "Count of automatic decision-table (auto) operations attached to this schedule."
+  },
+  "op_typ": {
+   "label": "Operation",
+   "desc": "Operation type code for a manual operation row.",
+   "options": [
+    {
+     "value": "plnt",
+     "label": "plant"
+    },
+    {
+     "value": "harv",
+     "label": "harvest only"
+    },
+    {
+     "value": "kill",
+     "label": "kill"
+    },
+    {
+     "value": "hvkl",
+     "label": "harvest and kill"
+    },
+    {
+     "value": "till",
+     "label": "tillage"
+    },
+    {
+     "value": "irrm",
+     "label": "irrigation"
+    },
+    {
+     "value": "fert",
+     "label": "fertilizer"
+    },
+    {
+     "value": "pest",
+     "label": "pesticide application"
+    },
+    {
+     "value": "graz",
+     "label": "grazing"
+    },
+    {
+     "value": "burn",
+     "label": "burn"
+    },
+    {
+     "value": "swep",
+     "label": "street sweep"
+    },
+    {
+     "value": "prtp",
+     "label": "print plant vars"
+    },
+    {
+     "value": "skip",
+     "label": "skip to end of year"
+    }
+   ]
+  },
+  "mon": {
+   "label": "Month",
+   "desc": "Month the operation occurs; 0 means none (use heat units instead).",
+   "options": [
+    {
+     "value": "0",
+     "label": "None (use heat units)"
+    },
+    {
+     "value": "1",
+     "label": "January"
+    },
+    {
+     "value": "2",
+     "label": "February"
+    },
+    {
+     "value": "3",
+     "label": "March"
+    },
+    {
+     "value": "4",
+     "label": "April"
+    },
+    {
+     "value": "5",
+     "label": "May"
+    },
+    {
+     "value": "6",
+     "label": "June"
+    },
+    {
+     "value": "7",
+     "label": "July"
+    },
+    {
+     "value": "8",
+     "label": "August"
+    },
+    {
+     "value": "9",
+     "label": "September"
+    },
+    {
+     "value": "10",
+     "label": "October"
+    },
+    {
+     "value": "11",
+     "label": "November"
+    },
+    {
+     "value": "12",
+     "label": "December"
+    }
+   ]
+  },
+  "day": {
+   "label": "Day",
+   "desc": "Day of month the operation occurs (1-31); 0 means none (use heat units instead)."
+  },
+  "hu_sch": {
+   "label": "Heat Units Fraction",
+   "unit": "frac",
+   "desc": "Fraction of potential heat units at which to schedule the operation (0-1); used when month/day are 0."
+  },
+  "op_data1": {
+   "label": "Operation Data 1",
+   "desc": "Primary reference name for the operation; meaning depends on op_typ (plant name for plnt/harv/kill/hvkl, tillage name for till, irrigation op for irrm, fertilizer name for fert, pesticide name for pest, graze op for graz)."
+  },
+  "op_data2": {
+   "label": "Operation Data 2",
+   "desc": "Secondary reference name for the operation; used for harv/hvkl (harvest operation name) and fert/pest (chemical application name); 'null' otherwise."
+  },
+  "op_data3": {
+   "label": "Operation Data 3",
+   "desc": "Numeric override value; meaning depends on op_typ (amount applied kg/ha for fert/pest, number of grazing days for graz, tile depth for dwm); 0 when unused."
+  }
+ },
+ "weather-sta.cli": {
+  "name": {
+   "label": "Name",
+   "desc": "Weather station name; must be unique."
+  },
+  "wgn": {
+   "label": "Weather Generator",
+   "desc": "Weather generator assigned to this station; references a station name in weather-wgn.cli."
+  },
+  "pcp": {
+   "label": "Precipitation",
+   "desc": "Observed precipitation file name (.pcp), or 'sim' to use the weather generator."
+  },
+  "tmp": {
+   "label": "Temperature",
+   "desc": "Observed temperature file name (.tem/.tmp), or 'sim' to use the weather generator."
+  },
+  "slr": {
+   "label": "Solar Radiation",
+   "desc": "Observed solar radiation file name (.slr), or 'sim' to use the weather generator."
+  },
+  "hmd": {
+   "label": "Relative Humidity",
+   "desc": "Observed relative humidity file name (.hmd), or 'sim' to use the weather generator."
+  },
+  "wnd": {
+   "label": "Wind Speed",
+   "desc": "Observed wind speed file name (.wnd), or 'sim' to use the weather generator."
+  },
+  "pet": {
+   "label": "Potential Evapotranspiration",
+   "desc": "Observed potential evapotranspiration file name, or 'null' if not used (no simulated option)."
+  },
+  "atmo_dep": {
+   "label": "Atmospheric Deposition",
+   "desc": "Atmospheric deposition station name (references atmo.cli / atmo_sta), or 'null' if not used."
+  }
+ },
+ "pcp.cli": {
+  "filename": {
+   "label": "File Name",
+   "desc": "Name of an observed precipitation (.pcp) data file listed for the project; one row per file."
+  }
+ },
+ "tmp.cli": {
+  "filename": {
+   "label": "File Name",
+   "desc": "Name of an observed temperature (.tem/.tmp) data file listed for the project; one row per file."
+  }
+ },
+ "soils.sol": {
+  "name": {
+   "label": "Name",
+   "desc": "Soil name; record key, must be unique."
+  },
+  "nly": {
+   "label": "Number of Layers",
+   "desc": "Number of soil layers in the profile (derived from the layers sub-table, not directly edited)."
+  },
+  "hyd_grp": {
+   "label": "Hydrologic Group",
+   "desc": "USDA hydrologic soil group.",
+   "options": [
+    {
+     "value": "A",
+     "label": "A"
+    },
+    {
+     "value": "B",
+     "label": "B"
+    },
+    {
+     "value": "C",
+     "label": "C"
+    },
+    {
+     "value": "D",
+     "label": "D"
+    }
+   ]
+  },
+  "dp_tot": {
+   "label": "Maximum Rooting Depth of Soil Profile",
+   "unit": "mm",
+   "desc": "Maximum rooting depth of soil profile."
+  },
+  "anion_excl": {
+   "label": "Anion Exclusion Fraction",
+   "desc": "Fraction of porosity (void space) from which anions are excluded (no unit suffix in the editor)."
+  },
+  "perc_crk": {
+   "label": "Crack Volume Fraction",
+   "desc": "Potential or maximum crack volume of the soil profile expressed as a fraction of the total soil volume (no unit suffix in the editor)."
+  },
+  "texture": {
+   "label": "Texture",
+   "desc": "Texture label of the soil (optional, free text)."
+  },
+  "dp": {
+   "label": "Depth to Bottom of Layer",
+   "unit": "mm",
+   "desc": "Depth to bottom of layer."
+  },
+  "bd": {
+   "label": "Bulk Density",
+   "unit": "g/cm³",
+   "desc": "Bulk density of layer."
+  },
+  "awc": {
+   "label": "Available Water Capacity",
+   "unit": "mm/mm",
+   "desc": "Available water capacity of soil layer."
+  },
+  "soil_k": {
+   "label": "Saturated Hydraulic Conductivity",
+   "unit": "mm/hr",
+   "desc": "Saturated hydraulic conductivity of soil layer."
+  },
+  "carbon": {
+   "label": "Organic Carbon",
+   "unit": "%",
+   "desc": "Carbon in soil layer."
+  },
+  "clay": {
+   "label": "Clay Content",
+   "unit": "%",
+   "desc": "Clay in soil layer."
+  },
+  "silt": {
+   "label": "Silt Content",
+   "unit": "%",
+   "desc": "Silt in soil layer."
+  },
+  "sand": {
+   "label": "Sand Content",
+   "unit": "%",
+   "desc": "Sand in soil layer."
+  },
+  "rock": {
+   "label": "Rock Fragment Content",
+   "unit": "%",
+   "desc": "Rock in soil layer."
+  },
+  "alb": {
+   "label": "Moist Soil Albedo",
+   "desc": "Soil albedo when soil is moist (0–0.25)."
+  },
+  "usle_k": {
+   "label": "USLE Soil Erodibility (K) Factor",
+   "desc": "USLE equation soil erodibility (K) factor (dimensionless, 0–0.65)."
+  },
+  "ec": {
+   "label": "Electrical Conductivity",
+   "unit": "dS/m",
+   "desc": "Electrical conductivity of soil layer."
+  },
+  "caco3": {
+   "label": "CaCO3 Content",
+   "unit": "%",
+   "desc": "CaCO3 in soil layer."
+  },
+  "ph": {
+   "label": "Soil pH",
+   "desc": "pH value of soil layer (3–10)."
+  }
+ },
+ "object.cnt": {
+  "name": {
+   "label": "Name",
+   "desc": "Project/simulation name; record key."
+  },
+  "ls_area": {
+   "label": "Landscape Area",
+   "unit": "ha",
+   "desc": "Total landscape-unit area (calculated)."
+  },
+  "tot_area": {
+   "label": "Total Area",
+   "unit": "ha",
+   "desc": "Total watershed/routing area (calculated)."
+  },
+  "obj": {
+   "label": "Objects",
+   "desc": "Total number of spatial objects."
+  },
+  "hru": {
+   "label": "HRUs",
+   "desc": "Number of hydrologic response units."
+  },
+  "lhru": {
+   "label": "HRU-LTE",
+   "desc": "Number of low-resolution (LTE) HRUs."
+  },
+  "rtu": {
+   "label": "Routing Units",
+   "desc": "Number of routing units (landscape units)."
+  },
+  "gwfl": {
+   "label": "gwflow / MODFLOW Cells",
+   "desc": "Number of gwflow (MODFLOW) cell objects (internal field mfl)."
+  },
+  "aqu": {
+   "label": "Aquifers",
+   "desc": "Number of aquifer objects."
+  },
+  "cha": {
+   "label": "Channels",
+   "desc": "Number of channel objects."
+  },
+  "res": {
+   "label": "Reservoirs",
+   "desc": "Number of reservoir objects."
+  },
+  "rec": {
+   "label": "Recall / Point Sources",
+   "desc": "Number of recall (point-source / measured-input) objects."
+  },
+  "exco": {
+   "label": "Export Coefficients",
+   "desc": "Number of export-coefficient objects."
+  },
+  "dlr": {
+   "label": "Delivery Ratios",
+   "desc": "Number of delivery-ratio objects."
+  },
+  "can": {
+   "label": "Canals",
+   "desc": "Number of canal objects."
+  },
+  "pmp": {
+   "label": "Pumps",
+   "desc": "Number of pump objects."
+  },
+  "out": {
+   "label": "Outlets",
+   "desc": "Number of outlet objects."
+  },
+  "lcha": {
+   "label": "Landscape Channels (LTE)",
+   "desc": "Number of LTE (chandeg) channel objects."
+  },
+  "aqu2d": {
+   "label": "2D Aquifers",
+   "desc": "Number of 2D (spatially distributed) aquifer objects."
+  },
+  "hrd": {
+   "label": "Herds",
+   "desc": "Number of herd (grazing) objects."
+  },
+  "wro": {
+   "label": "Water Rights Objects",
+   "desc": "Number of water-rights objects."
+  }
+ }
+}

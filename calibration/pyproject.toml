@@ -1,0 +1,26 @@
+[project]
+name = "swat-calibration"
+version = "0.1.0"
+description = "SWAT+ calibration for the Kimberly, ID field: per-crop ET against OpenET, and nitrogen/phosphorus against GRACEnet."
+requires-python = ">=3.10"
+dependencies = [
+    "pyswatplus",
+    "pandas",
+    "numpy",
+    "scipy",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/swat_kimberly", "src/swat_gym"]
+
+[project.optional-dependencies]
+dev = ["pytest", "salib", "openpyxl>=3.1.5"]
+
+[dependency-groups]
+dev = [
+    "openpyxl>=3.1.5",
+]

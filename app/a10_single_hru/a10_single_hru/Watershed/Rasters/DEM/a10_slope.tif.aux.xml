@@ -1,0 +1,12 @@
+<PAMDataset>
+  <PAMRasterBand band="1">
+    <Description>a10_slope</Description>
+    <Metadata>
+      <MDI key="STATISTICS_MINIMUM">1183.9876708984</MDI>
+      <MDI key="STATISTICS_MAXIMUM">1256.6527099609</MDI>
+      <MDI key="STATISTICS_MEAN">1230.9785189347</MDI>
+      <MDI key="STATISTICS_STDDEV">16.474531375796</MDI>
+      <MDI key="STATISTICS_VALID_PERCENT">43.02</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>

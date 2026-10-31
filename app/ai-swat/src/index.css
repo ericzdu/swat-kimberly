@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== SWAT+ Editor light design system (app-wide) ===== */
+:root {
+  --se-bg: #F4F6F8;         /* app canvas */
+  --se-rail: #F0F2F5;       /* rails, nav, table headers */
+  --se-card: #FFFFFF;       /* panels / cards */
+  --se-border: #E2E5EA;     /* hairlines */
+  --se-border-lt: #ECEFF1;  /* lightest divider */
+  --se-text: #1A2230;       /* primary text */
+  --se-text-mut: #5B6B7B;   /* secondary / labels */
+  --se-text-fnt: #90A4AE;   /* faint / placeholder */
+  --se-accent: #0068C1;     /* SWAT blue */
+  --se-accent-h: #00579E;   /* hover */
+  --se-accent-sf: #E4F0FA;  /* soft/tonal fill */
+  --se-accent-bd: #B9D8F1;  /* accent border */
+  --se-error: #B00020;
+  --se-error-sf: #FCE8EA;
+  --se-error-bd: #F0C2C8;
+  --se-ok: #2E7D32;
+  --se-ok-sf: #E7F3E8;
+  --se-ok-bd: #C4E0C6;
+  --se-warn: #B26A00;
+  --se-warn-sf: #FBF0DE;
+  --se-warn-bd: #EBD3A6;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--se-bg);
+  color: var(--se-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar — light */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cfd6dd;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b6c0c9;
+}
+
+/* Leaflet map fix */
+.leaflet-container {
+  background: #eef1f4;
+  border-radius: 8px;
+}
+
+/* Motion */
+.page-transition {
+  transition: opacity 0.15s ease;
+}
+@keyframes se-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.se-fade-in {
+  animation: se-fade-in 0.22s ease both;
+}

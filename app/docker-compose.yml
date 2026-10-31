@@ -1,0 +1,49 @@
+# AI-SWAT+ — full stack in two containers.
+#   swat-api : FastAPI backend + Linux SWAT+ rev-62 engine (compiled into the image)
+#   swat-web : nginx serving the built React app, proxying /api -> swat-api
+#
+#   docker compose up --build      then open  http://localhost:3000
+#
+# Everything the model needs (engine, rev-62 template, demo project) is baked into
+# the image — no host paths required, so this runs on any machine with Docker.
+# LLM keys are optional: put them in .env, or set them later in the app's Settings.
+# Field builds fetch gridMET weather, so the api container needs outbound internet.
+
+services:
+  swat-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-swat-api
+    ports:
+      - "8020:8000"
+    volumes:
+      - swat-data:/data        # farms, runs & DB persist across restarts
+      # Optional gSSURGO soil database (SQLite). Generate it once with
+      #   ./tools/convert_ssurgo.sh /path/to/SWAT_US_SSURGO_Soils.mdb
+      # If the folder is empty the build falls back to the template soil.
+      - ./soils_db:/opt/ai-swat/soils_db:ro
+    environment:
+      SSURGO_SQLITE: /opt/ai-swat/soils_db/ssurgo.sqlite
+      # Optional LLM providers — passed through from the host .env when present.
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+    restart: unless-stopped
+
+  swat-web:
+    build:
+      context: ./ai-swat
+      dockerfile: Dockerfile.web
+    image: ai-swat-web
+    ports:
+      - "3000:80"
+    depends_on:
+      - swat-api
+    restart: unless-stopped
+
+volumes:
+  swat-data:
