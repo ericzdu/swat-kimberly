@@ -31,6 +31,8 @@ from swat_gym.ltm.practice import TRIAL_ROTATION  # noqa: E402
 
 RUNS = ROOT / "runs"
 OUT = RUNS / "ltm_results.html"
+#: the companion page: model, treatments and calibration (scripts/ltm_nutrient_summary.py)
+NS_URL = "https://claude.ai/artifact/T4YMKqwDrAnKx22HBfSRAW"
 #: result file -> label; Exp 3 once per irrigation efficiency (OPEN_ITEMS L13)
 EXPS = {"ltm_exp1": "Exp 1 rotation", "ltm_exp2": "Exp 2 nitrogen",
         "ltm_exp3": "Exp 3 irrigation, 80 %", "ltm_exp3_eff55": "Exp 3 irrigation, 55 %",
@@ -230,23 +232,6 @@ def curve_panel(tag: str, s: str, panel: str, w: int = 470, h: int = 250) -> str
     return F.svg(w, h, "".join(body), f"ES learning curve {tag} {s}")
 
 
-def bias_table() -> str:
-    v = json.loads((RUNS / "ltm_validation.json").read_text())
-    rows = [[h["year"], CROP.get(h["crop"], h["crop"]), f(h.get("biomass_pct_err"), 0, True),
-             f(h.get("yield_pct_err"), 0, True)] for h in v["harvest"] if h["treatment"] == "52A"]
-    y = pd.read_csv(ROOT / "data" / "ltm" / "yield.csv")
-    pot = y[(y.treatment == "52A") & (y.crop == "potato")].yield_fresh_mg_ha.mean()
-    pot_dm = pot * econ.POTA_DM
-    sim = next(h["sim_yield_dm_t"] for h in v["harvest"] if h["treatment"] == "52A" and h["crop"] == "potato")
-    sb = v["sugarbeet_root_dm"]
-    note = (f"Potato tuber: measured {pot:.1f} Mg/ha fresh × {econ.POTA_DM:.3f} DM = {pot_dm:.1f} t DM/ha "
-            f"vs {sim:.1f} simulated ({(sim / pot_dm - 1) * 100:+.0f} %). Sugarbeet root DM "
-            f"(2018/2020 vs the trial's multi-year mean): 52A {sb['52A']['pct_err']:+.1f} %, fertilizer only "
-            f"{sb['fert']['pct_err']:+.1f} %, control {sb['control']['pct_err']:+.1f} %. Alfalfa and corn "
-            "silage have no measurement on this field.")
-    return table(["Year", "Crop (52A)", "Biomass error", "Yield error"], rows) + f"<p>{esc(note)}</p>"
-
-
 # -- page ---------------------------------------------------------------------------------------
 def main() -> None:
     D = load()
@@ -289,6 +274,10 @@ def main() -> None:
         "fixed plan? Three levers on the calibrated SWAT+ model of the Kimberly long-term manure "
         "trial (52A plot): crop rotation (Exp 1), nitrogen, manure vs synthetic (Exp 2), and monthly "
         "irrigation (Exp 3, at 55, 80 and 90 % application efficiency).</p>"
+        f"<p><b>Companion page.</b> The model itself, the trial's three treatments and how well the "
+        f"model reproduces the measured biomass, yield, uptake and soil N and P are on the "
+        f"<a href=\"{NS_URL}\">framework and calibration page</a>. This page does not repeat them; it "
+        "covers what the experiments found.</p>"
         "<p><b>Score.</b> Three fixed strategies, w = 1 (yield), 0.5 (balanced) and 0 "
         "(sustainability): score = w · ry/ry<sub>meas</sub> − (1 − w) · mean of the four "
         "sustainability terms (NO₃-N leached, gross irrigation, P loss + buildup, N₂O), each divided "
@@ -397,7 +386,7 @@ def main() -> None:
              f"Best fixed = highest mean train score among {e1['yield']['fixed']['n_candidates']} valid "
              "repeating rotations. ES frozen = each seed's per-season majority crop on the train windows. "
              "Every Exp 1 plan is auto-irrigated at 80 %. Rotation results inherit each crop's yield bias "
-             "(Table 4).")
+             f"(<a href=\"{NS_URL}\">calibration page</a>, section 5).")
 
     # Table 2: terms per arm
     def terms_rows(t):
@@ -434,8 +423,6 @@ def main() -> None:
              + "<p>Measured practice is replayed at efficiency 1.0 in every case (OPEN_ITEMS L13), so "
                "its row is the same; generated schedules run at the case efficiency.</p>")
 
-    t4 = tab("Crop yield bias of the model, 52A (simulated vs measured)", bias_table())
-
     intros = {
         "ltm_exp1": "Rotation. <i>Measured</i> is the trial (its rotation, measured irrigation at "
                     "efficiency 1.0). <i>Default</i> is the trial rotation auto-irrigated at 80 %, the "
@@ -453,26 +440,25 @@ def main() -> None:
                       "rotation, manure and N. <i>Measured</i> replays the trial's daily events at "
                       f"efficiency 1.0; <i>default</i> applies the trial's monthly totals as generated "
                       f"passes at {e_} %.")
-    detail = ("<h2>Part 2: the plans inside the model, trial weather 2013–2020</h2>"
+    detail = ("<h2>Part 2: what each plan does, trial weather 2013–2020</h2>"
               "<p>Each experiment's measured practice, default and best fixed plan per strategy, re-run on "
-              "the trial's own weather (window 2012, one of the seven test windows) with the figures of "
-              "the calibration page. Colour and line type identify the plan: greys for practice, and the "
-              "strategy's colour and line type (yield solid, balanced dashed, sustainability dotted) for "
-              "its best fixed plan. The ES policies are left out: each scores within 0.008 of its frozen "
-              "plan (Figure 3B). Measured values are the 52A plot's.</p>"
-              "<p><b>One difference from the calibration page.</b> The trial tilled its 2014 sugarbeet in "
-              "unharvested; the experiments' measured practice harvests it on the trial's 2018 harvest "
-              "date instead (practice.SGBT_2014_HARVEST_FROM), so that no weather window loses a crop by "
-              "construction. From 2014 on, measured practice here therefore differs from the calibration "
-              "page (for example 1,415 vs 1,389 kg NO₃-N/ha leached over 2013–2020, and a 2014 beet "
-              "harvest instead of none). Irrigation is identical.</p>"
-              + "".join(f"<h2>{8 + i}. {esc(EXPS[t_])}</h2>" + DT.section(t_, EXPS[t_], D, fig, intros[t_])
+              "the trial's own weather (window 2012, one of the seven test windows). The quantities and "
+              "their definitions are those of the <a href=\"" + NS_URL + "\">calibration page</a>, which "
+              "also compares measured practice with the trial's measurements; here the plans are compared "
+              "with each other. Greys are practice; each best fixed plan takes its strategy's colour and "
+              "line type (yield solid, balanced dashed, sustainability dotted). The ES policies are left "
+              "out: each scores within 0.008 of its frozen plan (Figure 3B).</p>"
+              "<p><b>Where measured practice differs from the calibration page.</b> The trial tilled its "
+              "2014 sugarbeet in unharvested; the experiments harvest it on the trial's 2018 harvest date "
+              "(practice.SGBT_2014_HARVEST_FROM) so that no weather window loses a crop by construction. "
+              "From 2014 on, measured practice here therefore differs slightly (1,415 vs 1,389 kg "
+              "NO₃-N/ha leached over 2013–2020, and a 2014 beet harvest). Irrigation is identical.</p>"
+              + "".join(f"<h2>{7 + i}. {esc(EXPS[t_])}</h2>" + DT.section(t_, EXPS[t_], D, fig, intros[t_])
                         for i, t_ in enumerate(EXPS)))
 
     bounds = ("<h2>Bounds on these results</h2><ul>"
-              "<li>Crop parameters are Ai-SWAT-Plus's, copied verbatim and not fitted here; potato "
-              "under-yields and spring wheat uses winter-wheat parameters. Rotation results inherit "
-              "each crop's bias (Table 4).</li>"
+              "<li>The model's crop yield biases (<a href=\"" + NS_URL + "\">calibration page</a>, "
+              "section 5) carry into every rotation result; alfalfa and corn silage are unmeasured.</li>"
               "<li>Leaching is not validated on this site. N₂O is IPCC Tier 1 accounting; SWAT+ does "
               "not simulate it.</li>"
               f"<li>The test set's effective sample size is {cfg['test_ess']:.2f}: intervals are wide "
@@ -492,9 +478,9 @@ def main() -> None:
             + "<h2>4. Exp 1: rotations</h2>" + f4
             + "<h2>5. Every term</h2>" + t2
             + "<h2>6. Exp 3: irrigation efficiency</h2>" + t3
-            + "<h2>7. Crop yield bias</h2>" + t4 + detail + bounds
+            + detail + bounds
             + "<p>Source files: runs/ltm_exp1.json, ltm_exp2.json, ltm_exp3.json, ltm_exp3_eff55.json, "
-              "ltm_exp3_eff90.json and their stage directories; runs/ltm_validation.json.</p>")
+              "ltm_exp3_eff90.json and their stage directories.</p>")
     OUT.write_text("<!DOCTYPE html><html><head><meta charset='utf-8'><title>LTM experiments: results (v6)"
                    "</title>" + style + "</head><body>" + body + NS.HOVER_JS + "</body></html>\n")
     print(f"wrote {OUT.relative_to(ROOT)}")

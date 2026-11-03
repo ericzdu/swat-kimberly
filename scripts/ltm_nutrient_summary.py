@@ -39,6 +39,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_ltm as B  # noqa: E402
 import ltm_figures as F  # noqa: E402
 from swat_gym.fastrunner import FastRunner  # noqa: E402
+from swat_gym.ltm.econ import POTA_DM  # noqa: E402
 from swat_gym.ltm.practice import (AUTO_IRR, BASE_IRR_EFF, MEASURED_IRR_EFF,  # noqa: E402
                                    auto_op)
 from swat_gym.ltm.render import EpisodePlan, render  # noqa: E402
@@ -54,6 +55,8 @@ TRT_LABEL = {"52A": "52A (manure)", "fert": "Fertilizer only", "control": "Contr
 CASES = {"measured": ("Measured irrigation (eff 1.0)", None),
          "auto100": ("Auto-irrigation, eff 1.0", 1.0),
          "auto080": ("Auto-irrigation, eff 0.80", BASE_IRR_EFF)}
+#: the companion page: the experiments run on this model (scripts/ltm_results.py)
+RESULTS_URL = "https://claude.ai/artifact/TtjHzAS9r4VMHsqkCRgwWx"
 CASE_COL = dict(zip(CASES, ("#2a78d6", "#eb6834", "#1baf7a")))   # ltm_figures slots 1-3
 TRT_SHORT = {"52A": "52A", "fert": "Fert", "control": "Ctrl"}
 #: line type per treatment where all treatments share one graph
@@ -483,6 +486,39 @@ def year_bars(title: str, labels: list[str], series: list[tuple[str, str, list[f
     return F.svg(w, h, "".join(body), title)
 
 
+def year_bars_all(title: str, labels: list[str], vals: dict, meas: list[float | None],
+                  ylab: str, unit: str, ymax: float, w: int = 960, h: int = 270) -> str:
+    """Every treatment and case together: per year, three treatment groups (52A, Fert, Ctrl)
+    of one bar per case, labelled under each group; measured dots above the 52A group."""
+    left, top = 70, 30
+    yt = F.ticks(0, ymax * 1.05)
+    n, trts, cases = len(labels), list(HRU.values()), list(CASES)
+    gw = (w - left - 20) / n
+    ax = F.Axes(left, top, gw * n, h - top - 52, (0, n), (yt[0], yt[-1]))
+    body = [F.text(left, 16, title, 13, weight="bold"), ax.grid(None, yt, "", ylab)]
+    sub_gap, bar_gap = 4, 1
+    sw = (gw - 12 - sub_gap * (len(trts) - 1)) / len(trts)
+    bw = (sw - bar_gap * (len(cases) - 1)) / len(cases)
+    for i, lab in enumerate(labels):
+        for j, t in enumerate(trts):
+            sx = left + i * gw + 6 + j * (sw + sub_gap)
+            for k, c in enumerate(cases):
+                v = vals[(c, t)][i]
+                y = ax.y(v)
+                body.append(f'<rect x="{sx + k * (bw + bar_gap):.1f}" y="{y:.1f}" width="{bw:.1f}" '
+                            f'height="{max(ax.y(0) - y, 0):.1f}" fill="{CASE_COL[c]}">'
+                            f'<title>{esc(lab)}, {esc(TRT_LABEL[t])}, {esc(CASES[c][0])}: '
+                            f'{v:,.2f} {esc(unit)}</title></rect>')
+            body.append(F.text(sx + sw / 2, ax.y(0) + 12, TRT_SHORT[t], 9, "middle", F.INK2))
+            if t == "52A" and meas[i] is not None and not np.isnan(meas[i]):
+                body.append(marker(sx + sw / 2, ax.y(meas[i]), "dot",
+                                   f"{lab}, 52A measured: {meas[i]:,.2f} {unit}"))
+        body.append(F.text(left + i * gw + gw / 2, ax.y(0) + 28, lab, 11, "middle", F.INK2))
+    body.append(f'<line x1="{left}" x2="{left + gw * n:.1f}" y1="{ax.y(0):.1f}" '
+                f'y2="{ax.y(0):.1f}" stroke="{F.INK2}" stroke-width="1"/>')
+    return F.svg(w, h, "".join(body), title)
+
+
 HOVER_JS = """
 <div id="tip" style="position:fixed;display:none;background:#fff;border:1px solid #c9c8c4;
 padding:4px 8px;font-size:12px;pointer-events:none"></div>
@@ -527,10 +563,27 @@ def num(x, nd=1) -> str:
     return "–" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:,.{nd}f}"
 
 
-def table(head: list[str], rows: list[list]) -> str:
-    th = "".join(f"<th>{esc(h)}</th>" for h in head)
-    tr = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
-    return f"<table><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table>"
+def table(head: list[str], rows: list[list], groups: list[tuple[str, int]] = (),
+          merge_first: bool = False, left: int = 1) -> str:
+    """``groups``: a header row above ``head`` of (label, column span); "" leaves a gap.
+    ``merge_first``: runs of the same first-column value become one cell. The first ``left``
+    columns are left-aligned (text), the rest right-aligned (numbers)."""
+    top = ("<tr>" + "".join(f'<th colspan="{n}" class="grp">{esc(g)}</th>' for g, n in groups)
+           + "</tr>") if groups else ""
+    th = "".join(f'<th{" class=l" if j < left else ""}>{esc(h)}</th>' for j, h in enumerate(head))
+    out = []
+    for i, r in enumerate(rows):
+        cells = [f'<td{" class=l" if j < left else ""}>{c}</td>' for j, c in enumerate(r)]
+        if merge_first:
+            if i and rows[i - 1][0] == r[0]:
+                cells = cells[1:]
+            else:
+                n = 1
+                while i + n < len(rows) and rows[i + n][0] == r[0]:
+                    n += 1
+                cells[0] = f'<td rowspan="{n}" class="l first">{r[0]}</td>'
+        out.append("<tr>" + "".join(cells) + "</tr>")
+    return f"<table><thead>{top}<tr>{th}</tr></thead><tbody>{''.join(out)}</tbody></table>"
 
 
 def case_legend() -> str:
@@ -549,9 +602,11 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
         return (f'<figure><div class="ftitle"><b>Figure {n_fig[0]}.</b> {title}</div>{body}'
                 + (f"<figcaption>{caption}</figcaption>" if caption else "") + "</figure>")
 
-    def tab(title: str, body: str) -> str:
+    def tab(title: str, body: str, note: str = "") -> str:
+        """A numbered table: title above, an optional one-line note under it."""
         n_tab[0] += 1
-        return f'<div class="ttitle"><b>Table {n_tab[0]}.</b> {title}</div>{body}'
+        return (f'<div class="ttitle"><b>Table {n_tab[0]}.</b> {title}</div>'
+                + (f'<div class="tnote">{note}</div>' if note else "") + body)
 
     y0 = Y[Y.case == "measured"]
     tot = y0.groupby("treatment")[["manure_n_kg_ha", "synthetic_n_kg_ha", "manure_p_kg_ha",
@@ -588,9 +643,11 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
         "<p>In the model each treatment is one HRU. The three HRUs share the soil, its initial "
         "state, the weather, crops, operations and irrigation, so every difference between them "
         "in this page comes from the nutrient inputs.</p>"
-        + tab("Nutrient inputs by treatment, 2013–2020 totals (kg/ha)",
-              table(["Treatment", "Manure", "Synthetic fertilizer", "Manure N", "Synthetic N",
-                     "Manure P", "Synthetic P"], rows)))
+        + tab("What each treatment receives, and its 2013–2020 nutrient totals",
+              table(["Treatment", "Manure", "Synthetic fertilizer", "From manure", "From fertilizer",
+                     "From manure", "From fertilizer"], rows,
+                    groups=[("", 3), ("N applied 2013–2020, kg/ha", 2),
+                            ("P applied 2013–2020, kg/ha", 2)], left=3)))
 
     # 2. applied N and P -----------------------------------------------------------------------
     def inputs(el):
@@ -604,17 +661,21 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
                           + F.text(282, 16, "52A  ·  Fert = fertilizer only  ·  Ctrl = control", 12),
                           "bar order"))
     rows = []
-    for trt in HRU.values():
+    for trt in ("52A", "fert"):
         for r in y0[y0.treatment == trt].sort_values("year").itertuples():
             rows.append([esc(TRT_LABEL[trt]), r.year, num(r.manure_n_kg_ha), num(r.synthetic_n_kg_ha),
                          num(r.swat_applied_n_kg_ha), num(r.manure_p_kg_ha), num(r.synthetic_p_kg_ha),
                          num(r.swat_applied_p_kg_ha)])
+    gap = float(np.max(np.abs(y0.manure_n_kg_ha + y0.synthetic_n_kg_ha - y0.swat_applied_n_kg_ha))
+                + np.max(np.abs(y0.manure_p_kg_ha + y0.synthetic_p_kg_ha - y0.swat_applied_p_kg_ha)))
+    applied_note = ("Total is what the model applied (hru_nb <code>fertn</code>/<code>fertp</code>); "
+                    + ("it equals manure + fertilizer in every year. " if gap < 0.05 else
+                       f"it differs from manure + fertilizer by up to {gap:.1f} kg/ha. ")
+                    + "The control receives nothing and is left out.")
     parts.append(
         "<h2>2. Yearly applied N and P</h2>"
         "<p>Same in every irrigation case. Manure is applied in the fall (Oct 20) and counted in "
-        "its calendar year. Manure N is mineral + organic N; manure P is total P. "
-        "<i>SWAT applied</i> is hru_nb <code>fertn</code>/<code>fertp</code>, i.e. what the "
-        "engine actually added.</p>"
+        "its calendar year. Manure N is mineral + organic N; manure P is total P.</p>"
         + fig("Nitrogen and phosphorus applied each year, all treatments",
               src_legend
               + input_bars("A. Nitrogen applied", inputs("n"), "N applied, kg/ha", "kg N/ha")
@@ -622,9 +683,11 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
               "Each year has three stacked bars: 52A, fertilizer only (Fert) and control (Ctrl). "
               "Amber is manure, grey is synthetic fertilizer. The control receives nothing (0). "
               "Hover a bar segment for its value.")
-        + tab("Yearly applied N and P (kg/ha)",
-              table(["Treatment", "Year", "Manure N", "Synthetic N", "SWAT applied N",
-                     "Manure P", "Synthetic P", "SWAT applied P"], rows))
+        + tab("N and P applied each year, by source",
+              table(["Treatment", "Year", "Manure", "Fertilizer", "Total",
+                     "Manure", "Fertilizer", "Total"], rows,
+                    groups=[("", 2), ("N applied, kg/ha", 3), ("P applied, kg/ha", 3)],
+                    merge_first=True, left=2), applied_note)
         + "<p>The fall-2012 manure (52A) falls in the spin-up year and is not in this table.</p>")
 
     # 3. monthly irrigation --------------------------------------------------------------------
@@ -646,9 +709,11 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
                              [(CASES[c][0], CASE_COL[c], irr52[c].cumsum()) for c in CASES],
                              "Gross mm, cumulative", "mm", step=True))
     yr = M.assign(year=M.month.dt.year).groupby(["case", "treatment", "year"]).irr_gross_mm.sum()
-    rows = [[esc(TRT_LABEL[t]), esc(CASES[c][0])] + [num(yr[(c, t, y)], 0) for y in years]
-            + [num(sum(yr[(c, t, y)] for y in years), 0)]
-            for t in HRU.values() for c in CASES]
+    same_irr = all(np.ptp([yr[(c, t, y)] for t in HRU.values()]) < 0.5 for c in CASES for y in years)
+    irr_trts = ["52A"] if same_irr else list(HRU.values())
+    rows = [([] if same_irr else [esc(TRT_LABEL[t])]) + [esc(CASES[c][0])]
+            + [num(yr[(c, t, y)], 0) for y in years] + [num(sum(yr[(c, t, y)] for y in years), 0)]
+            for t in irr_trts for c in CASES]
     parts.append(
         "<h2>3. Monthly irrigation</h2>"
         "<p>Gross applied water (mm/month). SWAT+ puts amount × efficiency into the soil; "
@@ -659,18 +724,28 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
         + fig("Monthly gross irrigation on 52A, each irrigation case separately", "".join(bars),
               "Same data as the figure above, one case per panel on a shared y scale. Hover a bar "
               "for its value.")
-        + tab("Yearly gross irrigation (mm)",
-              table(["Treatment", "Case"] + [str(y) for y in years] + ["Total"], rows))
+        + tab("Gross irrigation applied each year, mm"
+              + (" (the same on all three treatments)" if same_irr else ""),
+              table(([] if same_irr else ["Treatment"]) + ["Irrigation case"]
+                    + [str(y) for y in years] + ["2013–2020"], rows, merge_first=not same_irr,
+                    left=1 if same_irr else 2))
         + f"<p>Check: auto-irrigation at eff 1.0 applies {auto_check['sim_mm']:,.1f} mm to 52A "
           f"over 2013–2020; scripts/ltm_fit_auto_irr.py recorded {auto_check['fit_mm']:,.1f} mm "
           f"(model/ltm/auto_irr.json). Measured events total {auto_check['meas_mm']:,.1f} mm.</p>")
 
     # 4. monthly leached N ---------------------------------------------------------------------
+    trt_legend = line_legend([(TRT_LABEL[t], F.INK, TRT_DASH[t]) for t in HRU.values()],
+                             "Treatment (line type, panel D):")
     panels = []
     for i, t in enumerate(HRU.values()):
         ser = [(CASES[c][0], CASE_COL[c], M[(M.case == c) & (M.treatment == t)].set_index("month")
                 .no3n_leached_kg_ha) for c in CASES]
         panels.append(line_panel(f"{'ABC'[i]}. {TRT_LABEL[t]}", ser, "kg N/ha/month", "kg/ha", step=True))
+    panels.append(line_panel(
+        "D. All treatments and irrigation cases together",
+        [(f"{TRT_SHORT[t]} · {CASES[c][0]}", CASE_COL[c],
+          M[(M.case == c) & (M.treatment == t)].set_index("month").no3n_leached_kg_ha, TRT_DASH[t])
+         for t in HRU.values() for c in CASES], "kg N/ha/month", "kg/ha", step=True, h=320, fine=True))
     lr = M.assign(year=M.month.dt.year).groupby(["case", "treatment", "year"]).no3n_leached_kg_ha.sum()
     rows = [[esc(TRT_LABEL[t]), esc(CASES[c][0])] + [num(lr[(c, t, y)]) for y in years]
             + [num(sum(lr[(c, t, y)] for y in years))] for t in HRU.values() for c in CASES]
@@ -679,10 +754,14 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
         "<p>NO₃-N leaving the bottom of the 1.52 m profile (hru_ls <code>percn</code>), "
         "summed by month. <b>Leaching is not validated on this site</b>: there is no on-site "
         "measurement.</p>"
-        + fig("Monthly NO₃-N leached below the profile, by treatment", case_legend() + "".join(panels),
-              "One panel per treatment, each with its own y scale. Hover for every case's value.")
-        + tab("Yearly NO₃-N leached (kg/ha)",
-              table(["Treatment", "Case"] + [str(y) for y in years] + ["Total"], rows)))
+        + fig("Monthly NO₃-N leached below the profile, by treatment", case_legend() + trt_legend
+              + "".join(panels),
+              "A–C: one panel per treatment, each with its own y scale. D: all nine lines on one "
+              "scale; colour is the irrigation case and line type the treatment. Hover for every "
+              "line's value.")
+        + tab("NO₃-N leached below the 1.52 m profile each year, kg N/ha",
+              table(["Treatment", "Irrigation case"] + [str(y) for y in years] + ["2013–2020"],
+                    rows, merge_first=True, left=2)))
 
     # 5. biomass and yield ---------------------------------------------------------------------
     hv = H.set_index(["case", "treatment", "year"])
@@ -699,6 +778,22 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
         my = meas_y.get((y, r0.crop), np.nan)
         if not np.isnan(my):
             yld_pts.append((float(my), float(r0.sim_yield_dm_t_ha), f"{y} {r0.crop}"))
+    pot_meas = yl[(yl.treatment == "52A") & (yl.crop == "potato")].yield_fresh_mg_ha.mean()
+    pot_sim = float(hv.loc[("measured", "52A", int(yl[yl.crop == "potato"].year.max()))].sim_yield_dm_t_ha)
+    sb_meas = json.loads((ROOT / "runs" / "ltm_validation.json").read_text())["sugarbeet_root_dm"]
+    sb_yrs = [y for y in years if hv.loc[("measured", "52A", y)].crop == "sugarbeet"
+              and hv.loc[("measured", "52A", y)].sim_yield_dm_t_ha > 0 and y >= 2018]
+    sb_err = {t: 100 * (np.mean([hv.loc[("measured", t, y)].sim_yield_dm_t_ha for y in sb_yrs])
+                        / sb_meas[t]["meas_t"] - 1) for t in HRU.values()}
+    bias_note = (f"<p><b>Crops the scatter does not cover.</b> Potato tuber: measured "
+                 f"{pot_meas:.1f} Mg/ha fresh × {POTA_DM:.3f} dry matter = {pot_meas * POTA_DM:.1f} t DM/ha "
+                 f"against {pot_sim:.1f} simulated ({(pot_sim / (pot_meas * POTA_DM) - 1) * 100:+.0f} %). "
+                 f"Sugarbeet root dry matter, simulated {'/'.join(map(str, sb_yrs))} against the trial's "
+                 "multi-year mean: "
+                 + ", ".join(f"{TRT_LABEL[t]} {sb_err[t]:+.0f} %" for t in HRU.values())
+                 + ". Alfalfa and corn silage, which only the rotation experiment uses, have no "
+                 "measurement on this field. These biases carry into any result that changes the "
+                 "crop mix.</p>")
     scatter = (legend_row([("52A, measured irrigation, one point per crop-year", CASE_COL["measured"], "dot")],
                           "Points:")
                + scatter_panel("A. Above-ground biomass at harvest", bio_pts, "t/ha")
@@ -714,15 +809,20 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
             year_bars(f"{'ABC'[i]}. {TRT_LABEL[t]}", ylabels,
                       [(CASES[c][0], CASE_COL[c], vals[(c, t)]) for c in CASES],
                       mvals if t == "52A" else [None] * len(years), ylab, unit, ymax)
-            for i, t in enumerate(HRU.values()))
+            for i, t in enumerate(HRU.values())) + year_bars_all(
+            "D. All treatments and irrigation cases together", ylabels, vals, mvals, ylab, unit, ymax)
 
-    short = {"measured": "meas. irr.", "auto100": "auto 1.0", "auto080": "auto 0.80"}
+    short = {"measured": "measured irr.", "auto100": "auto eff 1.0", "auto080": "auto eff 0.80"}
+    sim_heads = ["Measured"] + [f"Sim., {short[c]}" for c in CASES]
+    meas_note = "Measured values exist for 52A only (– where none). Sim. = simulated."
     rows = []
     for t in HRU.values():
         for y in years:
             r0 = hv.loc[("measured", t, y)]
+            my = meas_y.get((y, r0.crop), np.nan) if t == "52A" else np.nan
             rows.append([esc(TRT_LABEL[t]), y, esc(r0.crop), num(r0.meas_biomass_t_ha, 2)]
                         + [num(hv.loc[(c, t, y)].sim_biomass_t_ha, 2) for c in CASES]
+                        + [num(float(my), 2)]
                         + [num(hv.loc[(c, t, y)].sim_yield_dm_t_ha, 2) for c in CASES])
     parts.append(
         "<h2>5. Biomass and yield at harvest</h2>"
@@ -736,15 +836,19 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
               f"Points on the dashed 1:1 line would be a perfect match; below it the model "
               f"under-predicts. A: {fit_stats(bio_pts)} t/ha. B: {fit_stats(yld_pts)} t/ha. "
               "Hover a point for its values.")
+        + bias_note
         + fig("Simulated biomass at harvest by treatment and irrigation case",
               year_figs(lambda c, t, y: hv.loc[(c, t, y)].sim_biomass_t_ha, "biomass_mg_ha",
                         "Biomass, t/ha", "t/ha"),
-              "One panel per treatment on a shared y scale; measured 52A biomass as black dots. "
-              "Hover a bar or dot for its value.")
-        + tab("Biomass and harvested yield (t/ha)",
-              table(["Treatment", "Year", "Crop", "Biomass, measured"]
-                    + [f"Biomass, {short[c]}" for c in CASES]
-                    + [f"Yield DM, {short[c]}" for c in CASES], rows)))
+              "A–C: one panel per treatment on a shared y scale; measured 52A biomass as black "
+              "dots. D: all three treatments side by side in each year (52A, Fert = fertilizer "
+              "only, Ctrl = control), one bar per irrigation case. Hover a bar or dot for its value.")
+        + tab("Above-ground biomass at harvest and harvested yield, measured and simulated",
+              table(["Treatment", "Year", "Crop"] + sim_heads + sim_heads, rows,
+                    groups=[("", 3), ("Biomass at harvest, t/ha", 4),
+                            ("Harvested yield, dry matter, t/ha", 4)], merge_first=True,
+                    left=3),
+              meas_note + " Measured yield is for the grain years only."))
 
     # 6. uptake --------------------------------------------------------------------------------
     same = [y for y in years
@@ -762,8 +866,9 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
             rows.append([esc(TRT_LABEL[t]), y, esc(hv.loc[("measured", t, y)].crop), num(mn)]
                         + [num(yi.loc[(c, t, y)].n_uptake_kg_ha) for c in CASES] + [num(mp)]
                         + [num(yi.loc[(c, t, y)].p_uptake_kg_ha) for c in CASES])
-    cap = ("One panel per treatment on a shared y scale; measured 52A uptake as black dots. "
-           "Hover a bar or dot for its value.")
+    cap = ("A–C: one panel per treatment on a shared y scale; measured 52A uptake as black dots. "
+           "D: all three treatments side by side in each year (52A, Fert = fertilizer only, "
+           "Ctrl = control), one bar per irrigation case. Hover a bar or dot for its value.")
     parts.append(
         "<h2>6. N and P uptake</h2>"
         "<p>Plant N and P uptake over the calendar year (hru_nb <code>nuptake</code>/"
@@ -775,15 +880,12 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
         + fig("Plant P uptake by treatment and irrigation case",
               year_figs(lambda c, t, y: yi.loc[(c, t, y)].p_uptake_kg_ha, "p_up_kg_ha",
                         "P uptake, kg/ha", "kg/ha"), cap)
-        + tab("N and P uptake (kg/ha)",
-              table(["Treatment", "Year", "Crop", "N, measured"] + [f"N, {short[c]}" for c in CASES]
-                    + ["P, measured"] + [f"P, {short[c]}" for c in CASES], rows)))
+        + tab("Plant N and P uptake per year, measured and simulated",
+              table(["Treatment", "Year", "Crop"] + sim_heads + sim_heads, rows,
+                    groups=[("", 3), ("N uptake, kg/ha", 4), ("P uptake, kg/ha", 4)],
+                    merge_first=True, left=3), meas_note))
 
     # 7 + 8. daily soil ------------------------------------------------------------------------
-    trt_legend = line_legend([(TRT_LABEL[t], F.INK, TRT_DASH[t]) for t in HRU.values()],
-                             "Treatment (line type):")
-    col_legend = line_legend([(CASES[c][0], CASE_COL[c], "") for c in CASES], "Irrigation case (colour):")
-
     def soil(col_kg, col_mg, vars_, name, unit_note):
         def series(col, t, c, dash=False):
             s = D[(D.case == c) & (D.treatment == t)].set_index("date")[col]
@@ -801,27 +903,27 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
         meas_legend = legend_row([(SHAPES[v][0], F.INK, SHAPES[v][1]) for v in vars_], "Measured:")
         every = [series(col_kg, t, c, True) for t in HRU.values() for c in CASES]
         every_mg = [series(col_mg, t, c, True) for t in HRU.values() for c in CASES]
-        out = [fig(f"{name}, daily: all treatments and irrigation cases on one graph",
-                   col_legend + trt_legend + meas_legend
-                   + line_panel("A. Whole profile (0–1520 mm), kg/ha", every, "kg/ha (0–1520 mm)",
-                                "kg/ha", h=380, fine=True)
-                   + line_panel("B. Profile mean, mg/kg, with measured values", every_mg, "mg/kg",
-                                "mg/kg", points=points(list(HRU.values()), True), h=380, fine=True),
-                   "Colour is the irrigation case and line type the treatment, so each line keeps "
-                   "the look it would have in its own panel below. Gridlines are quarterly. "
-                   + unit_note + " Hover for all nine values on a date.")]
-        out.append(fig(f"{name}, daily: whole profile by treatment (kg/ha)",
-                       case_legend() + "".join(
-                           line_panel(f"{'ABC'[i]}. {TRT_LABEL[t]}", [series(col_kg, t, c) for c in CASES],
-                                      "kg/ha (0–1520 mm)", "kg/ha")
-                           for i, t in enumerate(HRU.values())),
-                       "One panel per treatment, each with its own y scale."))
+        out = [fig(f"{name}, daily: whole profile by treatment (kg/ha)",
+                   case_legend() + trt_legend + "".join(
+                       line_panel(f"{'ABC'[i]}. {TRT_LABEL[t]}", [series(col_kg, t, c) for c in CASES],
+                                  "kg/ha (0–1520 mm)", "kg/ha")
+                       for i, t in enumerate(HRU.values()))
+                   + line_panel("D. All treatments and irrigation cases together", every,
+                                "kg/ha (0–1520 mm)", "kg/ha", h=380, fine=True),
+                   "A–C: one panel per treatment, each with its own y scale. D: all nine lines on "
+                   "one scale; colour is the irrigation case and line type the treatment. D's "
+                   "gridlines are quarterly. Hover for every line's value on a date.")]
         out.append(fig(f"{name}, daily: profile mean by treatment (mg/kg), with measured values",
-                       case_legend() + meas_legend + "".join(
+                       case_legend() + trt_legend + meas_legend + "".join(
                            line_panel(f"{'ABC'[i]}. {TRT_LABEL[t]}", [series(col_mg, t, c) for c in CASES],
                                       "mg/kg", "mg/kg", points=points([t], False))
-                           for i, t in enumerate(HRU.values())),
-                       "One panel per treatment, each with its own y scale. " + unit_note))
+                           for i, t in enumerate(HRU.values()))
+                       + line_panel("D. All treatments and irrigation cases together, with measured "
+                                    "values", every_mg, "mg/kg", "mg/kg",
+                                    points=points(list(HRU.values()), True), h=380, fine=True),
+                       "A–C: one panel per treatment, each with its own y scale. D: all nine lines "
+                       "on one scale (colour = irrigation case, line type = treatment), quarterly "
+                       "gridlines. " + unit_note))
         return "".join(out)
 
     parts.append(
@@ -862,6 +964,10 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
             "to the control's measured N mineralisation. Crop parameters come from the Ai-SWAT-Plus "
             "crop calibration unchanged; nothing is fitted to the yields or soil data shown here, "
             "so these comparisons are an independent check. Leaching has no on-site measurement.</p>"
+            f"<p><b>Companion page.</b> The <a href=\"{RESULTS_URL}\">experiment results</a> use "
+            "this model's 52A plot as the environment for the three management experiments "
+            "(rotation, nitrogen, irrigation). This page covers the model and its agreement with the "
+            "trial; that page covers only what the experiments found, and refers back here.</p>"
             "<p>Weather is gridMET at the field. Three irrigation cases, all on the measured rotation, "
             "fertilizer and manure:</p><ul>"
             "<li><b>Measured irrigation</b>: the trial's daily events, replayed at efficiency 1.0.</li>"
@@ -877,9 +983,12 @@ def page(T: dict, meas: pd.DataFrame, check: dict, mass: float, auto_check: dict
     style = ("<style>body{font-family:Calibri,sans-serif;background:#fff;color:#000;margin:24px;"
              "max-width:1000px}table{border-collapse:collapse;font-size:13px;margin:8px 0}"
              "th,td{border:1px solid #ccc;padding:2px 6px;text-align:right}"
-             "th:first-child,td:first-child{text-align:left}code{font-family:Calibri,sans-serif}"
+             "th.l,td.l{text-align:left}code{font-family:Calibri,sans-serif}"
              "figure{margin:18px 0 24px 0}.ftitle,.ttitle{font-size:15px;margin:14px 0 6px 0}"
              "figcaption{font-size:13px;color:#333;margin-top:4px}"
+             ".tnote{font-size:13px;color:#333;margin-bottom:4px}"
+             "th.grp{text-align:center;border-bottom:1px solid #999}"
+             "td.first{vertical-align:top}"
              "</style>")
     return ("<!DOCTYPE html><html><head><meta charset='utf-8'>"
             "<title>LTM water and nutrient summary</title>" + style + "</head><body>"

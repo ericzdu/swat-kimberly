@@ -216,6 +216,7 @@ def es_seed(args) -> dict:
     return {"seed": seed, "generations": int(n_gens), "hru_runs": spent, "hru_runs_cached": cached,
             "train_seconds": time.time() - t0, "fitness": log, "curve": curve,
             "picked_snapshot": best, "picked_train_score": float(full[best]),
+            "snapshot_train_scores": [float(v) for v in full],
             "train": train_eps, "test": test_eps, "genome": genome.tolist(),
             "engine_failures": {k: tally[k] for k in ("failed", "crashed_batches",
                                                       "first_error")}}

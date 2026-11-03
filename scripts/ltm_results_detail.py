@@ -4,8 +4,8 @@ For each experiment, five plans are re-simulated on the trial's own weather (win
 spin-up 2012, seasons 2013-2020, itself one of the 7 test windows): measured 52A practice,
 default, and the best fixed plan of each strategy, read from runs/ltm_exp*.json. Daily 0-kg
 probes (inert: tests/test_ltm.py) give soil NO3-N and solution P; the monthly HRU loss table is
-switched on for this run only. Figures follow scripts/ltm_nutrient_summary.py (the
-calibration page): colour = plan, line type = strategy.
+switched on for this run only. Plans are compared with each other only: the comparison with the
+trial's measurements is on the calibration page (scripts/ltm_nutrient_summary.py).
 """
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def simulate(plans: dict[str, EpisodePlan]) -> dict[str, dict]:
         return dict(zip(plans, r.run(list(plans.values()), START)))
 
 
-def tables(plan: EpisodePlan, o: dict, mass: float) -> dict:
+def tables(plan: EpisodePlan, o: dict) -> dict:
     """Monthly irrigation (gross) and leaching, yearly inputs/harvest/uptake, daily soil."""
     wb, ls, nb, mg = o["hru_wb_mon.txt"], o["hru_ls_mon.txt"], o["hru_nb_mon.txt"], o["mgt"]
     month = lambda d: pd.to_datetime(dict(year=d.yr, month=d.mon, day=1))  # noqa: E731
@@ -102,7 +102,6 @@ def tables(plan: EpisodePlan, o: dict, mass: float) -> dict:
                     for y in YEARS],
         "yield": [float(hv[hv.yr == y].op_var.sum() / 1000) for y in YEARS],
         "no3": pr.soil_no3, "solp": pr.soil_solp,
-        "no3_mg": pr.soil_no3 / mass * 1e6, "solp_mg": pr.soil_solp / mass * 1e6,
         "crops": list(plan.crops),
     }
 
@@ -135,29 +134,13 @@ def input_bars(title: str, T: dict, el: str, unit: str, w: int = 960, h: int = 2
     return F.svg(w, h, "".join(body), title)
 
 
-def measured_52a() -> dict:
-    up = pd.read_csv(NS.DATA / "uptake.csv").set_index("year")
-    yl = pd.read_csv(NS.DATA / "yield.csv")
-    my = yl[(yl.year > 0) & (yl.treatment == "52A")].groupby("year").yield_dm_mg_ha.mean()
-    get = lambda s, y: float(s[y]) if y in s.index and not np.isnan(s[y]) else None  # noqa: E731
-    return {"biomass": [get(up.biomass_mg_ha, y) for y in YEARS],
-            "yield": [get(my, y) for y in YEARS],
-            "n_up": [get(up.n_up_kg_ha, y) for y in YEARS],
-            "p_up": [get(up.p_up_kg_ha, y) for y in YEARS]}
-
-
 def section(tag: str, label: str, D: dict, fig, intro: str) -> str:
     plans = plans_of(tag, D)
     outs = simulate(plans)
-    mass = NS.soil_mass_kg_ha()
-    T = {a: tables(plans[a], outs[a], mass) for a in plans}
-    meas = measured_52a()
-    soil_meas = NS.measured_soil()
-    soil_meas = soil_meas[soil_meas.treatment == "52A"]
+    T = {a: tables(plans[a], outs[a]) for a in plans}
 
     lines = NS.line_legend([(lab, col, dash) for lab, col, dash in ARM.values()], "Plan:")
     squares = NS.legend_row([(lab, col, "square") for lab, col, _ in ARM.values()], "Plan:")
-    dots = NS.legend_row([("measured, 52A trial practice", F.INK, "dot")], "Measured:")
 
     def ser(key):
         return [(lab, col, T[a][key], dash) for a, (lab, col, dash) in ARM.items()]
@@ -167,58 +150,41 @@ def section(tag: str, label: str, D: dict, fig, intro: str) -> str:
 
     def bars(key, title, ylab, unit):
         vals = {a: T[a][key] for a in ARM}
-        m = meas[key]
-        ymax = max([max(v) for v in vals.values()] + [x for x in m if x is not None] + [1e-9])
-        return NS.year_bars(title, ylabels, [(ARM[a][0], ARM[a][1], vals[a]) for a in ARM], m, ylab, unit, ymax)
+        ymax = max([max(v) for v in vals.values()] + [1e-9])
+        return NS.year_bars(title, ylabels, [(ARM[a][0], ARM[a][1], vals[a]) for a in ARM],
+                            [None] * len(YEARS), ylab, unit, ymax)
 
-    def points(vars_):
-        mm = soil_meas[soil_meas["var"].isin(vars_)]
-        return [(r.date, r.value, NS.SHAPES[r.var][1], f"{r.date:%Y-%m-%d} 52A, {NS.SHAPES[r.var][0]}: "
-                 f"{r.value:.1f} mg/kg") for r in mm.itertuples()]
-
-    crop_note = (" Crops differ between plans here (Figure 5 shows each rotation); measured dots are "
-                 "the trial's own crops." if rot else "")
+    crop_note = (" Crops differ between plans here; Figure 5 shows each rotation." if rot else "")
     out = [f"<p>{intro}</p>"]
     out.append(fig(f"{label}: nitrogen and phosphorus applied each year, by plan",
                    squares + NS.legend_row([("solid = manure", F.INK2, "square"),
                                             ("pale = synthetic fertilizer", "#c9c8c4", "square")], "Source:")
                    + input_bars("A. Nitrogen applied", T, "n", "kg N/ha")
                    + input_bars("B. Phosphorus applied", T, "p", "kg P/ha"),
-                   "Five bars per year, left to right in legend order. Values are what the engine applied "
-                   "(hru_nb fertn/fertp); manure = applied − synthetic. Hover a segment for its value."))
+                   "Five bars per year, left to right in legend order. Hover a segment for its value."))
     out.append(fig(f"{label}: gross irrigation on the trial's weather, by plan",
                    lines + NS.line_panel("A. Monthly gross irrigation", ser("irr"), "Gross mm/month", "mm", step=True)
                    + NS.line_panel("B. Cumulative gross irrigation since Jan 2013",
                                    [(lab, col, s.cumsum(), dash) for lab, col, s, dash in ser("irr")],
                                    "Gross mm, cumulative", "mm", step=True),
-                   "Gross = water reaching the soil ÷ application efficiency. Measured practice replays the "
-                   "trial's events at efficiency 1.0. Hover for every plan's value."))
+                   "Hover for every plan's value."))
     out.append(fig(f"{label}: monthly NO₃-N leached below the profile, by plan",
                    lines + NS.line_panel("NO₃-N leached", ser("leach"), "kg N/ha/month", "kg/ha", step=True),
-                   "Leaching is not validated on this site. Hover for every plan's value."))
+                   "Hover for every plan's value."))
     out.append(fig(f"{label}: biomass and harvested yield, by plan",
-                   squares + dots + bars("biomass", "A. Above-ground biomass at harvest", "Biomass, t/ha", "t/ha")
+                   squares + bars("biomass", "A. Above-ground biomass at harvest", "Biomass, t/ha", "t/ha")
                    + bars("yield", "B. Harvested yield, dry matter", "Yield DM, t/ha", "t/ha"),
-                   "Alfalfa: largest standing biomass at a cut (A) and all cuts of the year (B). The 2014 "
-                   "trial sugarbeet was tilled in unharvested." + crop_note))
+                   ("Alfalfa: largest standing biomass at a cut (A) and all cuts of the year (B)." if rot
+                    else "") + crop_note))
     out.append(fig(f"{label}: plant N and P uptake, by plan",
-                   squares + dots + bars("n_up", "A. N uptake", "N uptake, kg/ha", "kg/ha")
+                   squares + bars("n_up", "A. N uptake", "N uptake, kg/ha", "kg/ha")
                    + bars("p_up", "B. P uptake", "P uptake, kg/ha", "kg/ha"),
-                   "Calendar-year uptake (hru_nb nuptake/puptake)." + crop_note))
-    for key, name, vars_, note in (
-            ("no3", "Soil NO₃-N", ["profile_no3_mg_kg", "no3_mg_kg_0_60"],
-             "The mg/kg panel divides the whole-profile total by the profile's dry soil mass, so it is a "
-             "1.52 m mean and not depth-matched to the measured samples."),
-            ("solp", "Soil solution P", ["olsen_p_mg_kg_0_30", "olsen_p_mg_kg_30_60"],
-             "Measured values are Olsen P, a different pool and depth from SWAT solution P: compare "
-             "trends only.")):
-        meas_leg = NS.legend_row([(NS.SHAPES[v][0], F.INK, NS.SHAPES[v][1]) for v in vars_], "Measured (52A):")
-        out.append(fig(f"{label}: {name}, daily, by plan",
-                       lines + meas_leg
-                       + NS.line_panel("A. Whole profile (0–1520 mm), kg/ha", ser(key), "kg/ha (0–1520 mm)",
-                                       "kg/ha", h=340, fine=True)
-                       + NS.line_panel("B. Profile mean, mg/kg, with measured 52A values", ser(f"{key}_mg"),
-                                       "mg/kg", "mg/kg", points=points(vars_), h=340, fine=True),
-                       "Read from a 0-kg probe every day (start-of-day state). " + note
-                       + " Hover for every plan's value."))
+                   crop_note.strip()))
+    out.append(fig(f"{label}: soil nitrate-N and solution P, daily, by plan",
+                   lines
+                   + NS.line_panel("A. Soil NO₃-N, whole profile (0–1520 mm)", ser("no3"),
+                                   "kg/ha (0–1520 mm)", "kg/ha", h=340, fine=True)
+                   + NS.line_panel("B. Soil solution P, whole profile (0–1520 mm)", ser("solp"),
+                                   "kg/ha (0–1520 mm)", "kg/ha", h=340, fine=True),
+                   "Hover for every plan's value."))
     return "".join(out)
