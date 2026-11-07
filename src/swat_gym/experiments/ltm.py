@@ -232,7 +232,7 @@ def main(argv=None) -> dict:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lever", choices=list(EXP), required=True)
-    ap.add_argument("--budget", type=int, default=3000 if smoke else 100_000)
+    ap.add_argument("--budget", type=int, default=6500 if smoke else 215_000)  # 100k x 15/7 train windows (2026-11-04)
     ap.add_argument("--seeds", type=int, default=1 if smoke else 4)
     ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--strategies", nargs="*", default=list(STRATEGIES))

@@ -62,7 +62,7 @@ def main(argv=None) -> dict:
     smoke = os.environ.get("SMOKE") == "1"
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--budget", type=int, default=6000 if smoke else 300_000)
+    ap.add_argument("--budget", type=int, default=13_000 if smoke else 645_000)  # 300k x 15/7 train windows (2026-11-04)
     ap.add_argument("--seeds", type=int, default=1 if smoke else 4)
     ap.add_argument("--algos", nargs="*", default=list(ORDER))
     ap.add_argument("--strategy", default="balanced", choices=list(STRATEGIES))

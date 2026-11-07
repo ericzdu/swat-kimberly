@@ -9,7 +9,7 @@ Background and claim bounds: `README.md`. Decisions and their dates: `OPEN_ITEMS
 uv sync --all-extras
 uv run pytest                                                         # ~30 s
 SMOKE=1 bash scripts/run_ltm.sh                                       # all five, tiny budgets
-perl -e 'use POSIX; setsid(); exec @ARGV' -- bash scripts/run_ltm.sh  # full run, detached, ~6 h
+perl -e 'use POSIX; setsid(); exec @ARGV' -- bash scripts/run_ltm.sh  # full run, detached, ~13 h
 ```
 
 `scripts/run_ltm.sh` starts all five jobs at once, and each one uses every core:
@@ -39,8 +39,9 @@ The budget unit is the **HRU-episode step**: one 9-year simulation of one plan
 (`LtmRunner.n_hru_runs`). Each ES seed gets `--budget` steps, and CMA-ES gets the same per
 strategy (CLAUDE.md rule 2).
 
-As of 2026-10-30 the settings are 4 seeds × 3 strategies at 100k steps for every experiment
-(OPEN_ITEMS L20). On a 10-core Apple Silicon Mac with all five running together:
+As of 2026-11-04 the settings are 4 seeds × 3 strategies at 215k steps for every experiment
+(OPEN_ITEMS L20's 100k, scaled by 15/7 for the 15 train windows so ES keeps ~22 generations).
+The timings below are for 100k over 7 windows; expect roughly double. On a 10-core Apple Silicon Mac with all five running together:
 - Exp 2 takes about 4.5 h.
 - Each Exp 3 case takes about 6 h.
 - Exp 1 takes a few hours from scratch, less than its budget suggests: its rotations
@@ -94,9 +95,10 @@ count".
 ## Windows
 
 An episode is a spin-up year plus 8 seasons, on gridMET weather at the field:
-- Train windows start 1995–2001 and test windows start 2011–2017, 7 of each.
+- Weather is gridMET 1979–2025, the whole record (2026-11-04; previously 1995–2025).
+- Train windows start 1979–1993 and test windows start 2003–2017, 15 of each; 2002 is a buffer.
 - Train and test share no calendar year.
-- Effective sample size is 1.34 for each set (`src/swat_gym/ltm/windows.py`).
+- Effective sample size is 2.08 for each set (`src/swat_gym/ltm/windows.py`).
 
 ## Reports
 

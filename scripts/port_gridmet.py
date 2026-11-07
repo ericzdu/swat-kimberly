@@ -2,7 +2,7 @@
 """Port gridMET daily weather for the Kimberly field into SWAT+ weather files.
 
 gridMET (Abatzoglou 2013, Int. J. Climatol. 33:121-131, doi:10.1002/joc.3413) at the field
-point (hru.con: 42.540 N, 114.320 W), 1995-2025, from the Northwest Knowledge Network THREDDS
+point (hru.con: 42.540 N, 114.320 W), 1995-2025 (LTM site: 1979-2025), from the Northwest Knowledge Network THREDDS
 NCSS point service. That service returns the *packed* integers; each variable is unpacked
 with the scale_factor / add_offset its OPeNDAP .das publishes (checked below, and recorded):
 tmmx and tmmn have different offsets (220 K vs 210 K).
@@ -56,20 +56,22 @@ META = ROOT / "data" / "gridmet_kimberly_1995_2025.json"
 ET_CSV = ROOT / "legacy" / "data" / "observed_et_gridmet.csv"
 
 LAT, LON = 42.540, -114.320   # the field (hru.con), not the AgriMet station
-#: site: (lat, lon, cache stem, target TxtInOut)
+#: site: (lat, lon, years, target TxtInOut). LTM: gridMET's whole record from 1979 (user decision
+#: 2026-11-04: more year-disjoint windows, swat_gym.ltm.windows); GRACEnet keeps its 1995 start.
 SITES = {
-    "gracenet": (42.540, -114.320, "gridmet_kimberly_1995_2025", ROTATION),
-    "ltm": (42.5513, -114.3541, "gridmet_ltm_1995_2025", ROOT / "model" / "ltm" / "TxtInOut"),
+    "gracenet": (42.540, -114.320, (1995, 2025), ROTATION),
+    "ltm": (42.5513, -114.3541, (1979, 2025), ROOT / "model" / "ltm" / "TxtInOut"),
 }
+YEARS = (1995, 2025)
 
 
 def use_site(name: str) -> Path:
-    """Point LAT/LON/CACHE/META at a site; returns its TxtInOut."""
-    global LAT, LON, CACHE, META
-    LAT, LON, stem, tio = SITES[name]
+    """Point LAT/LON/YEARS/CACHE/META at a site; returns its TxtInOut."""
+    global LAT, LON, YEARS, CACHE, META
+    LAT, LON, YEARS, tio = SITES[name]
+    stem = f"gridmet_{'kimberly' if name == 'gracenet' else name}_{YEARS[0]}_{YEARS[1]}"
     CACHE, META = ROOT / "data" / f"{stem}.csv", ROOT / "data" / f"{stem}.json"
     return tio
-YEARS = (1995, 2025)
 THREDDS = "http://thredds.northwestknowledge.net:8080/thredds"
 VARS = {  # short name: netCDF variable
     "pr": "precipitation_amount", "tmmx": "daily_maximum_temperature",
@@ -235,7 +237,7 @@ def main() -> None:
         write(tio, w, elev)
     annual = w.groupby("year")[["pcp", "pet"]].sum()
     print(f"annual precip {annual['pcp'].mean():.0f} mm, grass ETo {annual['pet'].mean():.0f} mm "
-          f"(1995-2025 mean)")
+          f"({YEARS[0]}-{YEARS[1]} mean)")
 
 
 if __name__ == "__main__":

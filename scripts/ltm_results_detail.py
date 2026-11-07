@@ -1,7 +1,7 @@
 """The experiments' plans inside the model, figure by figure (imported by scripts/ltm_results.py).
 
 For each experiment, five plans are re-simulated on the trial's own weather (window 2012:
-spin-up 2012, seasons 2013-2020, itself one of the 7 test windows): measured 52A practice,
+spin-up 2012, seasons 2013-2020, itself one of the test windows): measured 52A practice,
 default, and the best fixed plan of each strategy, read from runs/ltm_exp*.json. Daily 0-kg
 probes (inert: tests/test_ltm.py) give soil NO3-N and solution P; the monthly HRU loss table is
 switched on for this run only. Plans are compared with each other only: the comparison with the

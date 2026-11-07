@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Write runs/ltm_results.html: results of the LTM experiments (v6: relative-yield score,
-4 ES seeds, 100k HRU-episode steps per seed and per CMA-ES search; OPEN_ITEMS L19, L20).
+"""Write runs/ltm_results.html: results of the LTM experiments (v7: relative-yield score,
+4 ES seeds, 215k HRU-episode steps per seed and per CMA-ES search, gridMET 1979-2025, 15 + 15
+windows; OPEN_ITEMS L19, L20). The sustainability strategy is read from
+runs/ltm_exp*_floorwin.json when present (per-window yield floor, scripts/ltm_rescore_floor.py).
 
 Every number is read from a file this repo wrote (no transcription): runs/ltm_exp*.json,
 runs/ltm_exp*/es_*.json and fixed_*.json (learning curves), runs/ltm_validation.json,
@@ -25,6 +27,10 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 import ltm_figures as F  # noqa: E402
 import ltm_nutrient_summary as NS  # noqa: E402
+from swat_gym.ltm.windows import SEASONS, TEST, TRAIN  # noqa: E402
+
+N_TRAIN, N_TEST = len(TRAIN), len(TEST)
+TRAIN_SPAN, TEST_SPAN = f"{TRAIN[0]}–{TRAIN[-1] + SEASONS}", f"{TEST[0]}–{TEST[-1] + SEASONS}"
 import ltm_results_detail as DT  # noqa: E402
 from swat_gym.ltm import econ  # noqa: E402
 from swat_gym.ltm.practice import TRIAL_ROTATION  # noqa: E402
@@ -72,7 +78,14 @@ def rot(crops) -> str:
 
 
 def load() -> dict:
-    return {t: json.loads((RUNS / f"{t}.json").read_text()) for t in EXPS}
+    """Experiment reports; sustainability replaced by its per-window-floor rescore if present."""
+    D = {t: json.loads((RUNS / f"{t}.json").read_text()) for t in EXPS}
+    for t in EXPS:
+        fw = RUNS / f"{t}_floorwin.json"
+        if fw.is_file():
+            D[t]["strategies"]["sustainability"] = json.loads(fw.read_text())["strategies"]["sustainability"]
+            D[t]["floorwin"] = True
+    return D
 
 
 def stage(tag: str, name: str) -> dict:
@@ -269,7 +282,7 @@ def main() -> None:
                    for v in e1s[s]["es"].values())
 
     head = (
-        "<h1>Long-term manure experiments: results (v6)</h1>"
+        "<h1>Long-term manure experiments: results (v7)</h1>"
         "<p>Can a learned, closed-loop management policy beat the trial's practice and the best "
         "fixed plan? Three levers on the calibrated SWAT+ model of the Kimberly long-term manure "
         "trial (52A plot): crop rotation (Exp 1), nitrogen, manure vs synthetic (Exp 2), and monthly "
@@ -282,12 +295,18 @@ def main() -> None:
         "(sustainability): score = w · ry/ry<sub>meas</sub> − (1 − w) · mean of the four "
         "sustainability terms (NO₃-N leached, gross irrigation, P loss + buildup, N₂O), each divided "
         "by measured practice's train mean. ry is relative harvested yield. At w = 0 an episode "
-        "below default practice's yield loses 10 × the shortfall. Profit is reported, not scored.</p>"
+        + ("below default practice's relative yield <i>in the same weather window</i> loses 10 × the "
+           "shortfall (rescored 2026-11-05: the test years yield ~7 % less than the train years under "
+           "every practice, so a train-mean floor penalised even measured practice on test; the "
+           "optimisers themselves were trained with the train-mean floor and were not retrained). "
+           if all(D[t].get("floorwin") for t in EXPS) else
+           "below default practice's train-mean yield loses 10 × the shortfall. ")
+        + "Profit is reported, not scored.</p>"
         f"<p><b>Methods.</b> A closed-loop policy (64×64 network trained by OpenAI-ES, "
         f"{cfg['seeds']} seeds) against the best open-loop plan: CMA-ES for N and I, every valid "
         f"repeating rotation (exhaustive) for R. Each ES seed and each CMA-ES search gets "
-        f"{cfg['budget']:,} HRU-episode steps. Plans are selected on 7 train windows (1995–2009) and "
-        f"scored on 7 test windows (2011–2025), which share no calendar year; the windows overlap, so "
+        f"{cfg['budget']:,} HRU-episode steps. Plans are selected on {N_TRAIN} train windows ({TRAIN_SPAN}) and "
+        f"scored on {N_TEST} test windows ({TEST_SPAN}), which share no calendar year; the windows overlap, so "
         f"the effective sample size is {cfg['test_ess']:.2f} and intervals are ESS-based (rule 7). "
         "Exp 1 is quoted against <i>default</i> (the trial rotation under the same auto-irrigation), "
         "the others against <i>measured</i> practice.</p>"
@@ -360,7 +379,7 @@ def main() -> None:
                       "← fixed plan better", "policy better →")
              + forest(D, "adaptivity_value", "B. Learned policy − its own frozen plan (value of adapting)",
                       "← frozen better", "closed loop better →"),
-             "Dot = mean paired difference over the 7 test windows; bar = ESS-based 95 % interval. "
+             f"Dot = mean paired difference over the {N_TEST} test windows; bar = ESS-based 95 % interval. "
              "Four rows per line, one per seed. An interval that crosses zero is unresolved.")
     curve_leg = (F.svg(960, 24, F.text(70, 16, "Lines:", 12, color=F.INK2, weight="bold")
                        + f'<line x1="120" x2="150" y1="12" y2="12" stroke="{STRAT_COL["balanced"]}" stroke-width="2"/>'
@@ -442,7 +461,7 @@ def main() -> None:
                       f"passes at {e_} %.")
     detail = ("<h2>Part 2: what each plan does, trial weather 2013–2020</h2>"
               "<p>Each experiment's measured practice, default and best fixed plan per strategy, re-run on "
-              "the trial's own weather (window 2012, one of the seven test windows). The quantities and "
+              "the trial's own weather (window 2012, one of the test windows). The quantities and "
               "their definitions are those of the <a href=\"" + NS_URL + "\">calibration page</a>, which "
               "also compares measured practice with the trial's measurements; here the plans are compared "
               "with each other. Greys are practice; each best fixed plan takes its strategy's colour and "
@@ -481,7 +500,7 @@ def main() -> None:
             + detail + bounds
             + "<p>Source files: runs/ltm_exp1.json, ltm_exp2.json, ltm_exp3.json, ltm_exp3_eff55.json, "
               "ltm_exp3_eff90.json and their stage directories.</p>")
-    OUT.write_text("<!DOCTYPE html><html><head><meta charset='utf-8'><title>LTM experiments: results (v6)"
+    OUT.write_text("<!DOCTYPE html><html><head><meta charset='utf-8'><title>LTM experiments: results (v7)"
                    "</title>" + style + "</head><body>" + body + NS.HOVER_JS + "</body></html>\n")
     print(f"wrote {OUT.relative_to(ROOT)}")
 

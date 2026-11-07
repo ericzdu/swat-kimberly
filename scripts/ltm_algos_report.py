@@ -19,7 +19,17 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import ltm_figures as F  # noqa: E402
 import ltm_nutrient_summary as NS  # noqa: E402
-from swat_gym.ltm.practice import decisions, irr_cap  # noqa: E402
+from swat_gym.ltm.windows import SEASONS, TEST, TRAIN  # noqa: E402
+
+N_TRAIN, N_TEST = len(TRAIN), len(TEST)
+TRAIN_SPAN, TEST_SPAN = f"{TRAIN[0]}–{TRAIN[-1] + SEASONS}", f"{TEST[0]}–{TEST[-1] + SEASONS}"
+from datetime import date, timedelta  # noqa: E402
+from swat_gym.ltm.env import plan_from_x  # noqa: E402
+from swat_gym.ltm.practice import irr_months  # noqa: E402
+from swat_gym.ltm.render import _passes  # noqa: E402
+from swat_gym.ltm.practice import decisions, irr_cap, trial_season  # noqa: E402
+
+CROP = {"barl": "barley", "sgbt": "sugarbeet", "wwht": "wheat", "pota": "potato"}
 
 RUNS = ROOT / "runs"
 RESULTS_URL = "https://claude.ai/artifact/TtjHzAS9r4VMHsqkCRgwWx"
@@ -180,7 +190,7 @@ def schedule_mm(x):
     return [float(v) * caps.get(d.mon, 0.0) for v, d in zip(x, decisions("I"))]
 
 
-def schedule_panel(D, a, window, title, w=960, h=170, ymax=None):
+def schedule_panel(D, a, window, title, w=960, h=184, ymax=None):
     """Scheduled monthly depth on one window: each seed of ``a`` against measured practice."""
     ds = decisions("I")
     left, top = 70, 26
@@ -188,7 +198,7 @@ def schedule_panel(D, a, window, title, w=960, h=170, ymax=None):
     meas = schedule_mm(D["baseline_x"])
     seeds = [schedule_mm(r["test_x"][str(window)]) for r in D["algos"][a]]
     yt = F.ticks(0, ymax or max(max(meas), max(max(s) for s in seeds)) * 1.05, 4)
-    ax = F.Axes(left, top, w - left - 20, h - top - 34, (0, n), (0, yt[-1]))
+    ax = F.Axes(left, top, w - left - 20, h - top - 48, (0, n), (0, yt[-1]))
     name, col = ALGOS[a]
     body = [F.text(left, 16, title, 13, weight="bold"), ax.grid(None, yt, "", "mm/month")]
     gw = ax.w / n
@@ -196,11 +206,14 @@ def schedule_panel(D, a, window, title, w=960, h=170, ymax=None):
         body.append(f'<rect x="{ax.x0 + i * gw + 1:.1f}" y="{ax.y(v):.1f}" width="{gw - 2:.1f}" '
                     f'height="{ax.y(0) - ax.y(v):.1f}" fill="#e4e3df"><title>{window + d.k} month {d.mon}, '
                     f'measured: {v:.0f} mm</title></rect>')
+        body.append(F.text(ax.x0 + (i + 0.5) * gw, ax.y0 + ax.h + 12, "JFMAMJJASOND"[d.mon - 1], 10, "middle",
+                           F.INK2))
         if i == 0 or ds[i - 1].k != d.k:
             x = ax.x0 + i * gw
             body.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{ax.y0}" y2="{ax.y0 + ax.h}" stroke="{F.INK2}" '
                         f'stroke-width="0.75"/>')
-            body.append(F.text(x + 3, ax.y0 + ax.h + 14, str(window + d.k), 11, color=F.INK2))
+            body.append(F.text(x + 3, ax.y0 + ax.h + 27, f"{window + d.k} {CROP[trial_season(d.k).crop]}", 11,
+                               color=F.INK2))
     dashes = ["", "6 3", "2 2", "8 3 2 3"]
     for j, s in enumerate(seeds):
         pts = " ".join(f"{ax.x0 + (i + 0.5) * gw:.1f},{ax.y(v):.1f}" for i, v in enumerate(s))
@@ -209,7 +222,13 @@ def schedule_panel(D, a, window, title, w=960, h=170, ymax=None):
     return F.svg(w, h, "".join(body), title)
 
 
-def reaction_panel(D, a, title, w=470, h=200):
+def crop_ticks(ax, seas) -> str:
+    """Crop name under each season tick (second row below the S1–S8 labels)."""
+    return "".join(F.text(ax.x(k), ax.y0 + ax.h + 28, CROP[trial_season(k).crop], 10, "middle", F.INK2)
+                   for k in seas)
+
+
+def reaction_panel(D, a, title, w=470, h=214):
     """Seasonal scheduled depth on every test window, for the algorithm's best-train seed:
     one line per window. Identical lines = the schedule ignores the weather and soil state."""
     ds = decisions("I")
@@ -221,15 +240,167 @@ def reaction_panel(D, a, title, w=470, h=200):
     left, top = 60, 26
     allv = [v for t in tot.values() for v in t]
     yt = F.ticks(0, max(allv) * 1.08, 4)
-    ax = F.Axes(left, top, w - left - 14, h - top - 34, (0.5, len(seas) + 0.5), (0, yt[-1]))
+    ax = F.Axes(left, top, w - left - 14, h - top - 48, (0.5, len(seas) + 0.5), (0, yt[-1]))
     name, col = ALGOS[a]
     body = [F.text(left, 16, title, 13, weight="bold"),
-            ax.grid([k for k in seas], yt, "", "mm/season", xfmt=lambda v: f"S{int(v)}")]
+            ax.grid([k for k in seas], yt, "", "mm/season", xfmt=lambda v: f"S{int(v)}"),
+            crop_ticks(ax, seas)]
     for wn in wins:
         pts = " ".join(f"{ax.x(k):.1f},{ax.y(v):.1f}" for k, v in zip(seas, tot[wn]))
         body.append(f'<polyline fill="none" stroke="{col}" stroke-width="1.5" stroke-opacity="0.8" '
                     f'points="{pts}"><title>{esc(name)}, test window {wn}–{int(wn) + 8}</title></polyline>')
     return F.svg(w, h, "".join(body), title)
+
+
+def overlay_panel(D, algos, title, w=960, h=274):
+    """Seasonal scheduled depth of several algorithms on one axis: best-train seed of each, mean
+    over the test windows (open-loop schedules are the same on every window)."""
+    ds = decisions("I")
+    seas = sorted({d.k for d in ds})
+    tot = {}
+    for a in algos:
+        r = max(D["algos"][a], key=lambda r: r["picked_train_score"])
+        per = [[sum(v for v, d in zip(schedule_mm(x), ds) if d.k == k) for k in seas]
+               for x in r["test_x"].values()]
+        tot[a] = list(np.mean(per, axis=0))
+    left, top = 60, 26
+    yt = F.ticks(0, max(v for t in tot.values() for v in t) * 1.08, 4)
+    ax = F.Axes(left, top, w - left - 14, h - top - 48, (0.5, len(seas) + 0.5), (0, yt[-1]))
+    body = [F.text(left, 16, title, 13, weight="bold"),
+            ax.grid([k for k in seas], yt, "", "mm/season", xfmt=lambda v: f"S{int(v)}"),
+            crop_ticks(ax, seas)]
+    for a in algos:
+        name, col = ALGOS[a]
+        pts = " ".join(f"{ax.x(k):.1f},{ax.y(v):.1f}" for k, v in zip(seas, tot[a]))
+        body.append(f'<polyline fill="none" stroke="{col}" stroke-width="2" points="{pts}">'
+                    f'<title>{esc(name)}</title></polyline>')
+        for k, v in zip(seas, tot[a]):
+            body.append(f'<circle cx="{ax.x(k):.1f}" cy="{ax.y(v):.1f}" r="4" fill="{col}" stroke="#fff" '
+                        f'stroke-width="1"><title>{esc(name)}, S{k}: {v:.0f} mm</title></circle>')
+    return F.svg(w, h, "".join(body), title)
+
+
+def compare_schedule(D, algos, title, w=960, h=264):
+    """Monthly gross depth over the 8 seasons: measured practice as bars, each algorithm's
+    best-train seed as a line (mean over the test windows; open loop is the same on every one)."""
+    ds = decisions("I")
+    n = len(ds)
+    meas = schedule_mm(D["baseline_x"])
+    lines = {}
+    for a in algos:
+        r = max(D["algos"][a], key=lambda r: r["picked_train_score"])
+        lines[a] = list(np.mean([schedule_mm(x) for x in r["test_x"].values()], axis=0))
+    left, top = 70, 26
+    yt = F.ticks(0, max(max(meas), max(max(v) for v in lines.values())) * 1.05, 4)
+    ax = F.Axes(left, top, w - left - 20, h - top - 48, (0, n), (0, yt[-1]))
+    body = [F.text(left, 16, title, 13, weight="bold"), ax.grid(None, yt, "", "mm/month (gross)")]
+    gw = ax.w / n
+    for i, (d, v) in enumerate(zip(ds, meas)):
+        body.append(f'<rect x="{ax.x0 + i * gw + 1:.1f}" y="{ax.y(v):.1f}" width="{gw - 2:.1f}" '
+                    f'height="{ax.y(0) - ax.y(v):.1f}" fill="#e4e3df"><title>S{d.k} month {d.mon}, '
+                    f'measured: {v:.0f} mm</title></rect>')
+        body.append(F.text(ax.x0 + (i + 0.5) * gw, ax.y0 + ax.h + 12, "JFMAMJJASOND"[d.mon - 1], 10, "middle",
+                           F.INK2))
+        if i == 0 or ds[i - 1].k != d.k:
+            x = ax.x0 + i * gw
+            body.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{ax.y0}" y2="{ax.y0 + ax.h}" stroke="{F.INK2}" '
+                        f'stroke-width="0.75"/>')
+            body.append(F.text(x + 3, ax.y0 + ax.h + 27, f"S{d.k} {CROP[trial_season(d.k).crop]}", 11,
+                               color=F.INK2))
+    for a in algos:
+        name, col = ALGOS[a]
+        pts = " ".join(f"{ax.x0 + (i + 0.5) * gw:.1f},{ax.y(v):.1f}" for i, v in enumerate(lines[a]))
+        body.append(f'<polyline fill="none" stroke="{col}" stroke-width="2" points="{pts}"/>')
+        for i, (d, v) in enumerate(zip(ds, lines[a])):
+            body.append(f'<circle cx="{ax.x0 + (i + 0.5) * gw:.1f}" cy="{ax.y(v):.1f}" r="3" fill="{col}">'
+                        f'<title>{esc(name)}, S{d.k} month {d.mon}: {v:.0f} mm</title></circle>')
+    return F.svg(w, h, "".join(body), title)
+
+
+def event_timeline(D, a, window, title, w=960, row=124):
+    """Every irrigation event, season by season (Apr 1 - Oct 31): the trial's measured events as
+    stems up, labelled with their dates; algorithm ``a``'s best-train-seed passes as stems down
+    (render._passes, the days the engine applies them). Planting and harvest marked."""
+    r = max(D["algos"][a], key=lambda r: r["picked_train_score"])
+    plan = plan_from_x("I", np.array(r["test_x"][str(window)]))
+    name, col = ALGOS[a]
+    left, top = 110, 8
+    d0, d1 = date(2001, 4, 1).timetuple().tm_yday, date(2001, 10, 31).timetuple().tm_yday
+    xw = w - left - 20
+    X = lambda doy: left + (doy - d0) / (d1 - d0) * xw  # noqa: E731
+    up, dn, mmax = 40, 40, 120.0
+    body = [F.text(10, 16, title, 13, weight="bold")]
+    for mon in range(4, 11):
+        x = X(date(2001, mon, 1).timetuple().tm_yday)
+        body.append(F.text(x + 2, 34, date(2001, mon, 1).strftime("%b"), 11, color=F.INK2))
+    for k in range(1, 9):
+        s_ = trial_season(k)
+        year = window + k
+        y0 = 40 + top + (k - 1) * row + up + 22     # baseline of this season's row
+        doy = lambda m, d: date(2001, m, d).timetuple().tm_yday  # noqa: E731
+        body.append(F.text(10, y0 + 4, f"{year} {CROP[s_.crop]}", 12, color=F.INK))
+        for mon in range(4, 11):
+            x = X(doy(mon, 1))
+            body.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{y0 - up - 20}" y2="{y0 + dn}" stroke="#eeeeee"/>')
+        body.append(f'<line x1="{left}" x2="{left + xw}" y1="{y0}" y2="{y0}" stroke="{F.INK2}" stroke-width="0.75"/>')
+        for (m, d), lab in ((s_.plant, "plant"), (s_.harvest, "harvest")):
+            x = X(doy(m, d))
+            body.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{y0 - up - 18}" y2="{y0 + dn}" stroke="{F.INK}" '
+                        f'stroke-width="1" stroke-dasharray="3 3"/>')
+            body.append(F.text(x + 3, y0 + dn - 2, f"{lab} {m}/{d}", 10, color=F.INK))
+        for m, d, mm in s_.irr_daily or ():
+            x = X(doy(m, d))
+            yt = y0 - up * min(mm, mmax) / mmax
+            body.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{y0}" y2="{yt:.1f}" stroke="#8a8984" stroke-width="3">'
+                        f'<title>{year}-{m:02d}-{d:02d}, measured: {mm:.0f} mm</title></line>')
+            body.append(f'<text x="{x + 3:.1f}" y="{yt - 2:.1f}" font-size="9" fill="{F.INK2}" '
+                        f'transform="rotate(-60 {x + 3:.1f} {yt - 2:.1f})">{m}/{d}</text>')
+        months = irr_months(s_)
+        amounts = dict(zip(months, plan.irr_mm[k - 1]))
+        first_ev = min([date(year, *s_.plant)] + [date(year, m, d) for m, d, _ in (s_.irr_daily or ())])
+        first = min(first_ev, date(year, months[0], 1))
+        last = date(year, *s_.harvest) - timedelta(days=1)
+        for mon in months:
+            for d, mm in _passes(year, mon, amounts.get(mon, 0.0), first, last):
+                x = X(doy(mon, d))
+                body.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{y0}" y2="{y0 + dn * min(mm, mmax) / mmax:.1f}" '
+                            f'stroke="{col}" stroke-width="2"><title>{year}-{mon:02d}-{d:02d}, {esc(name)}: '
+                            f'{mm:.0f} mm</title></line>')
+    return F.svg(w, 40 + top + 8 * row + 10, "".join(body), title)
+
+
+DECOMP = [("measured_daily_eff100", "Measured daily events", "#7a7a7a"),
+          ("default_eff100", "Measured monthly totals, 25 mm passes", "#b0aea8"),
+          ("default_eff80", "Measured monthly totals, 25 mm passes", "#b0aea8"),
+          ("cma_eff100", "CMA-ES schedule", ALGOS["cma"][1]),
+          ("cma_eff80", "CMA-ES schedule", ALGOS["cma"][1])]
+
+
+def decomp_bars(X, title, w=960, h=250):
+    """Horizontal bars: mean NO3-N leached on the test windows for each decomposition arm."""
+    left, top, rowh = 330, 30, 36
+    vmax = max(X[k]["no3"] for k, _, _ in DECOMP) * 1.1
+    xt = F.ticks(0, vmax, 5)
+    ax = F.Axes(left, top, w - left - 90, rowh * len(DECOMP), (0, xt[-1]), (0, 1))
+    body = [F.text(10, 16, title, 13, weight="bold")]
+    for v in xt:
+        x = ax.x(v)
+        body.append(f'<line x1="{x:.1f}" x2="{x:.1f}" y1="{top}" y2="{top + ax.h}" stroke="#e5e5e5"/>')
+        body.append(F.text(x, top + ax.h + 14, f"{v:g}", 11, "middle", F.INK2))
+    body.append(F.text(ax.x0 + ax.w / 2, top + ax.h + 30, "NO\u2083-N leached, kg/ha/yr (test-window mean)", 11,
+                       "middle", F.INK2))
+    for i, (k, lab, col) in enumerate(DECOMP):
+        e = X[k]
+        y = top + i * rowh
+        body.append(F.text(left - 8, y + 15, lab, 12, "end", F.INK))
+        body.append(F.text(left - 8, y + 29, f"efficiency {e['eff']:.2f}, gross {e['water']:.0f} mm/yr, "
+                                             f"rel. yield {e['ry']:.3f}", 10, "end", F.INK2))
+        x1 = ax.x(e["no3"])
+        body.append(f'<rect x="{ax.x0}" y="{y + 6:.1f}" width="{max(x1 - ax.x0, 1.5):.1f}" height="{rowh - 12}" '
+                    f'rx="3" fill="{col}" fill-opacity="{1.0 if e["eff"] == 1.0 else 0.55}"><title>{esc(lab)}, '
+                    f'eff {e["eff"]:.2f}: {e["no3"]:.2f} kg/ha/yr</title></rect>')
+        body.append(F.text(x1 + 6, y + 22, f"{e['no3']:.1f}" if e["no3"] >= 10 else f"{e['no3']:.2f}", 12))
+    return F.svg(w, top + ax.h + 40, "".join(body), title)
 
 
 # -- page -------------------------------------------------------------------------------------
@@ -297,8 +468,8 @@ def main() -> None:
             f"for all 8 seasons, {len(decisions('I'))} decisions, application efficiency "
             f"{cfg['irr_eff']:.0%}), rerun with seven algorithms on the <b>{cfg['strategy']}</b> strategy "
             f"(w = {cfg['w']:g}). Each algorithm gets {len(cfg['seeds'])} seeds and "
-            f"{cfg['budget']:,} HRU-episode steps per seed (3 × the v6 runs), is selected on the 7 train "
-            f"windows (1995–2009) and scored on the 7 test windows (2011–2025; effective sample size "
+            f"{cfg['budget']:,} HRU-episode steps per seed (3 × the v6 runs), is selected on the {N_TRAIN} train "
+            f"windows ({TRAIN_SPAN}) and scored on the {N_TEST} test windows ({TEST_SPAN}; effective sample size "
             f"{cfg['test_ess']:.2f}). The model and its calibration are on the "
             f"<a href=\"{CALIB_URL}\">calibration page</a>.</p>"
             "<p><b>Two families.</b> A <b>closed-loop</b> method trains a policy: a 64×64 neural network "
@@ -373,7 +544,7 @@ def main() -> None:
                     "algorithm better →", [a for a in algos if a != "cma"])
              + forest(D, "vs_measured", "B. Algorithm − measured practice", "← practice better",
                       "algorithm better →", algos),
-             "Dot = mean paired difference over the 7 test windows, bar = ESS-based 95 % interval. "
+             f"Dot = mean paired difference over the {N_TEST} test windows, bar = ESS-based 95 % interval. "
              "An interval crossing zero is unresolved.")
     adapt_fig = fig("Value of adapting: each closed-loop policy against its own frozen plan",
                     forest(D, "adaptivity", "Policy − frozen plan", "← frozen better",
@@ -388,15 +559,74 @@ def main() -> None:
                 NS.legend_row([("measured practice", "#e4e3df", "square")], "Bars:")
                 + NS.line_legend([("seed 0", F.INK, ""), ("seed 100", F.INK, "6 3"), ("seed 200", F.INK, "2 2"),
                                   ("seed 300", F.INK, "8 3 2 3")], "Lines (one per seed):")
-                + "".join(schedule_panel(D, a, win, f"{'ABCDEFG'[i]}. {ALGOS[a][0]} ({FAMILY[a]})", ymax=ymax)
+                + "".join(schedule_panel(D, a, win, f"{'ABCDEFG'[i]}. {ALGOS[a][0]}" + ("" if FAMILY[a] in ALGOS[a][0] else f" ({FAMILY[a]})"), ymax=ymax)
                           for i, a in enumerate(algos)),
                 "Scheduled gross depth for each irrigable month, by season (vertical lines). All panels "
                 "share the y scale. Hover a line or bar for its values.")
     react = fig("Does the schedule change with the weather? Seasonal depth on each test window",
-                "".join(reaction_panel(D, a, f"{'ABCDEFG'[i]}. {ALGOS[a][0]}") for i, a in enumerate(algos)),
+                "".join(reaction_panel(D, a, f"{'ABCDEFG'[i]}. {ALGOS[a][0]}") for i, a in enumerate(algos))
+                + NS.line_legend([(ALGOS[a][0], ALGOS[a][1], "") for a in algos], "Panel H:")
+                + overlay_panel(D, algos, "H. All algorithms together (mean over the test windows)"),
                 "Best-train seed of each algorithm; one line per test window (seasons S1–S8 of that "
                 "window). Open-loop schedules are identical on every window by construction; a closed-loop "
-                "policy whose lines coincide has learned a fixed schedule.")
+                "policy whose lines coincide has learned a fixed schedule. H puts A–G on one axis; for closed-loop policies each point is the mean over the test windows.")
+
+    # where the leaching cut comes from (scripts/ltm_leach_decomp.py)
+    dpath = RUNS / "ltm_leach_decomp.json"
+    leach = ""
+    if dpath.exists() and {"cma", "ppo"} <= set(algos):
+        X = json.loads(dpath.read_text())
+        m, d1, d8, c8, c1 = (X[k] for k in ("measured_daily_eff100", "default_eff100", "default_eff80",
+                                             "cma_eff80", "cma_eff100"))
+        leach = ("<h2>7. Same water, 99 % less leaching: where it comes from</h2>"
+                 f"<p>CMA-ES uses the same gross water as measured practice ({c8['water']:.0f} vs "
+                 f"{m['water']:.0f} mm/yr) and leaches {c8['no3']:.2f} instead of {m['no3']:.0f} kg NO₃-N/ha/yr. "
+                 "Two things change between those arms besides the schedule. The measured replay applies the "
+                 "trial's own daily events (17–58 mm each) at efficiency 1.0; every generated schedule is "
+                 "split into passes of at most 25.4 mm and delivered at efficiency 0.80, so a fifth of the "
+                 "gross water never reaches the soil. Figure 8 holds each factor fixed in turn.</p>"
+                 + fig("Measured practice against the learned schedules, month by month",
+                       NS.legend_row([("measured practice", "#e4e3df", "square")], "Bars:")
+                       + NS.line_legend([(ALGOS[a][0], ALGOS[a][1], "") for a in ("cma", "ppo")], "Lines:")
+                       + compare_schedule(D, ["cma", "ppo"], "Gross depth per irrigable month, seasons S1–S8"),
+                       f"Best-train seed of each; PPO is the mean over the {N_TEST} test windows (it varies a little "
+                       "by window). The bars are the trial's monthly totals, which default practice applies "
+                       "as passes. Per season, CMA-ES takes water out of S1 (barley) and S4 (potato) and puts "
+                       "it into S3 and S7 (wheat); the other seasons stay close to practice. Letters under "
+                       "the bars are months. Only the decision months are shown: the trial's events outside "
+                       f"them (measured daily replay {m['water'] * 8:,.0f} mm over 8 seasons vs "
+                       f"{sum(schedule_mm(D['baseline_x'])):,.0f} mm in these bars) are not decisions.")
+                 + fig("Every irrigation event: the trial's measured events against the CMA-ES passes",
+                       NS.legend_row([("measured event (up, labelled month/day)", "#8a8984", "square"),
+                                      ("CMA-ES pass (down)", ALGOS["cma"][1], "square")], "Stems:")
+                       + event_timeline(D, "cma", 2012, "Trial weather (window 2012), seasons 2013–2020"),
+                       "Stem length is depth, on one scale for both (0–120 mm): measured events are 17–116 mm, "
+                       "CMA-ES passes at most 25.4 mm, so CMA-ES applies the same gross water in more, smaller "
+                       "events. "
+                       "Dashed lines are planting and harvest. The measured replay is at efficiency 1.0, the "
+                       "passes at 0.80. Note the measured irrigation after barley and wheat harvest "
+                       "(September and late August), outside the months the optimiser decides. Hover any stem "
+                       "for its date and depth.")
+                 + fig("NO₃-N leached, changing one factor at a time",
+                       decomp_bars(X, "Test-window mean leaching by schedule, event size and efficiency"),
+                       "Solid = efficiency 1.0, pale = 0.80. Leaching is simulated below the profile and not "
+                       "validated on site.")
+                 + "<ul>"
+                 f"<li><b>Event size, same water and efficiency:</b> applying the trial's monthly totals as "
+                 f"passes instead of its daily events cuts leaching {m['no3']:.0f} → {d1['no3']:.0f} "
+                 f"(−{100 * (1 - d1['no3'] / m['no3']):.0f} %).</li>"
+                 f"<li><b>Efficiency 1.0 → 0.80, same schedule:</b> {d1['no3']:.0f} → {d8['no3']:.2f}, "
+                 f"but relative yield falls {d1['ry']:.3f} → {d8['ry']:.3f}: less water reaches the crop "
+                 "and the profile never drains.</li>"
+                 f"<li><b>Optimising the schedule at 0.80:</b> leaching stays at {c8['no3']:.2f}; what CMA-ES "
+                 f"recovers is yield ({d8['ry']:.3f} → {c8['ry']:.3f}).</li>"
+                 f"<li><b>The CMA-ES schedule at efficiency 1.0</b> (the same gross water, all of it reaching "
+                 f"the soil) leaches {c1['no3']:.0f} kg/ha/yr, more than measured practice.</li></ul>"
+                 "<p>So the 99 % is a property of the 0.80 efficiency assumption and pass-sized events, not "
+                 "of the optimised timing. The optimiser's gain is yield at the same gross water and the "
+                 "same (already low) leaching. A fair headline: <i>at 80 % efficiency the optimised schedule "
+                 f"keeps leaching near zero while raising relative yield {100 * (c8['ry'] / d8['ry'] - 1):.0f} % "
+                 "over the same monthly totals</i>.</p>")
 
     # tables
     rows = []
@@ -422,7 +652,7 @@ def main() -> None:
                       groups=[("", 2), ("Strategy score", 2), ("Means of the seeds", 3),
                               ("Against CMA-ES", 1), ("Adaptation", 2), ("", 1)], left=2),
              "Better/worse = the same-seed paired difference's ESS interval excludes zero. Schedule "
-             "spread = standard deviation of each decision across the 7 test windows (unit-box scale, "
+             f"spread = standard deviation of each decision across the {N_TEST} test windows (unit-box scale, "
              "mean over decisions); 0 means one fixed schedule.")
     seed_rows = []
     for a in algos:
@@ -442,7 +672,7 @@ def main() -> None:
                 "a closed-loop episode costs 40 steps (one per decision), an open-loop evaluation one per "
                 "window. CMA-ES finishes its last generation and may exceed the budget slightly.</li>"
                 f"<li>ES: population {hp['es']['population']}, σ {hp['es']['sigma']}, Adam lr {hp['es']['lr']}, "
-                "all 7 train windows each generation.</li>"
+                f"all {N_TRAIN} train windows each generation.</li>"
                 f"<li>GA (closed loop): population {hp['ga']['population']}, top {hp['ga']['parents']} parents, "
                 f"1 elite, mutation σ {hp['ga']['sigma']}, no crossover.</li>"
                 f"<li>PPO: {kv(hp['sb3']['ppo'])}. SAC: {kv(hp['sb3']['sac'])}. Both: {hp['sb3']['n_envs']} "
@@ -470,7 +700,8 @@ def main() -> None:
             + "<h2>4. Head to head</h2>" + vs
             + ("<h2>5. Does feedback help?</h2>" + adapt_fig if closed else "")
             + "<h2>6. The policies</h2>" + sched + react
-            + "<h2>7. Every seed</h2>" + t2 + settings + bounds
+            + leach
+            + f"<h2>{8 if leach else 7}. Every seed</h2>" + t2 + settings + bounds
             + f"<p>Source: runs/{esc(args.tag)}.json and runs/{esc(args.tag)}/ (one stage file per algorithm "
               "and seed); swat_gym.ltm.algos, swat_gym.experiments.ltm_algos.</p>")
     Path(args.out).write_text("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Irrigation scheduling: "

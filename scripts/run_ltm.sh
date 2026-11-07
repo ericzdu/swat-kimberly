@@ -1,7 +1,8 @@
 #!/bin/bash
 # Run every LTM experiment at once: Exp 1 (rotation), Exp 2 (nitrogen) and Exp 3 (irrigation)
-# at efficiency 0.80, 0.55 and 0.90. 4 ES seeds x 3 strategies, 100k HRU-episode steps per seed
-# (2026-10-30: about 6 h on a 10-core Apple Silicon Mac; Exp 3 dominates).
+# at efficiency 0.80, 0.55 and 0.90. 4 ES seeds x 3 strategies, 215k HRU-episode steps per seed
+# (2026-11-04: 15 train windows; 100k x 15/7 keeps ES at ~22 generations. At 100k / 7 windows
+# the run took about 6 h on a 10-core Apple Silicon Mac; Exp 3 dominates).
 #
 #   perl -e 'use POSIX; setsid(); exec @ARGV' -- bash scripts/run_ltm.sh   # detached
 #   SMOKE=1 bash scripts/run_ltm.sh                                          # tiny budgets, minutes
@@ -10,8 +11,8 @@
 # Results: runs/ltm_exp<n>[_eff55|_eff90].json; finished stages are reused on a rerun.
 cd "$(dirname "$0")/.."
 SEEDS=${SEEDS:-4}
-BUDGET=${BUDGET:-100000}
-[ "$SMOKE" = 1 ] && SEEDS=1 && BUDGET=3000
+BUDGET=${BUDGET:-215000}
+[ "$SMOKE" = 1 ] && SEEDS=1 && BUDGET=6500
 run() {
   tag=$1; shift
   {

@@ -9,6 +9,7 @@ rm -f runs/ltm_algos_done.log
   echo "=== start $(date)"
   uv run python -m swat_gym.experiments.ltm_algos "$@" 2>&1 | grep --line-buffered -v "evals  best\|render_mode"
   echo "=== driver exit ${PIPESTATUS[0]} $(date)"
+  uv run python scripts/ltm_leach_decomp.py 2>&1 | tail -6
   uv run python scripts/ltm_algos_report.py 2>&1
   echo "=== report exit $? $(date)"
 } > "$LOG"
